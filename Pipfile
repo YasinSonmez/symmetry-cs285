@@ -1,0 +1,15 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+cython = "==0.29.28"
+d3rlpy = "==1.1.1"
+d4rl = "*"
+jupyter = "*"
+
+[dev-packages]
+
+[requires]
+python_version = "3.8"
