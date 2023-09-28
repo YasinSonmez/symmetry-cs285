@@ -13,4 +13,7 @@
    ```
    pipenv shell
    ```
-   
+4. To run the notebook inside the environment:
+   ```
+   pipenv run jupyter notebook
+   ```
