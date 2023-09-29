@@ -17,3 +17,7 @@
    ```
    pipenv run jupyter notebook
    ```
+5. To see the tensorboard logs:
+   ```
+   pipenv run tensorboard --logdir .
+   ```
