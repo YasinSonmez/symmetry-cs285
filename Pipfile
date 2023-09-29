@@ -8,6 +8,7 @@ cython = "==0.29.28"
 d3rlpy = "==1.1.1"
 d4rl = "*"
 jupyter = "*"
+tensorboard = "*"
 
 [dev-packages]
 
