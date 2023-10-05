@@ -10,6 +10,8 @@ d4rl = "*"
 jupyter = "*"
 tensorboard = "*"
 gymnasium = "*"
+pandas = "*"
+matplotlib = "*"
 
 [dev-packages]
 
