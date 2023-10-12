@@ -5,13 +5,13 @@ name = "pypi"
 
 [packages]
 cython = "==0.29.28"
-d3rlpy = "==1.1.1"
 d4rl = "*"
 jupyter = "*"
 tensorboard = "*"
-gymnasium = "*"
 pandas = "*"
 matplotlib = "*"
+torch = ">=2.0.0, !=2.0.1, !=2.1.0"
+gymnasium = {extras = ["all"], version = "*"}
 
 [dev-packages]
 

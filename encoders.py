@@ -8,7 +8,7 @@ from typing import Any, ClassVar, Dict, List, Optional, Sequence, Type, Union
 import torch
 from torch import nn
 
-class _InvertedPendulumEncoder (nn.Module):  # type: ignore
+class _SymmetryEncoder (nn.Module):  # type: ignore
 
     _observation_shape: Sequence[int]
     _use_batch_norm: bool
@@ -77,22 +77,48 @@ class _InvertedPendulumEncoder (nn.Module):  # type: ignore
     def last_layer(self) -> nn.Linear:
         return self._fcs[-1]
     
-class InvertedPendulumEncoder(_InvertedPendulumEncoder, encoders.Encoder):
+class SymmetryEncoder(_SymmetryEncoder, encoders.Encoder):
+
+    def __init__(
+        self,
+        project,
+        projection_size: int,
+        observation_shape,
+        hidden_units,
+        use_batch_norm,
+        dropout_rate,
+        use_dense,
+        activation,
+    ):
+        self._projection_size = projection_size
+        self._project = project
+        super().__init__(
+            observation_shape=projection_size,
+            hidden_units=hidden_units,
+            use_batch_norm=use_batch_norm,
+            use_dense=use_dense,
+            dropout_rate=dropout_rate,
+            activation=activation,
+        )
+        self.observation_shape = observation_shape
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        h = self._fc_encode(x)
+        h = self._fc_encode(self._project(x))
         if self._use_batch_norm:
             h = self._bns[-1](h)
         if self._dropout_rate is not None:
             h = self._dropouts[-1](h)
         return h
     
-class InvertedPendulumEncoderWithAction(_InvertedPendulumEncoder, encoders.EncoderWithAction):
+class SymmetryEncoderWithAction(_SymmetryEncoder, encoders.EncoderWithAction):
 
     _action_size: int
     _discrete_action: bool
 
     def __init__(
         self,
+        project,
+        projection_size: int,
         observation_shape: Sequence[int],
         action_size: int,
         hidden_units: Optional[Sequence[int]] = None,
@@ -104,8 +130,11 @@ class InvertedPendulumEncoderWithAction(_InvertedPendulumEncoder, encoders.Encod
     ):
         self._action_size = action_size
         self._discrete_action = discrete_action
+        self._projection_size = projection_size
+        self._project = project
         # Remove the 0'th state, which is position
-        concat_shape = (observation_shape[0] - 1 + action_size,)
+        # concat_shape = (observation_shape[0] - 1 + action_size,)
+        concat_shape = (self._projection_size + action_size,)
         super().__init__(
             observation_shape=concat_shape,
             hidden_units=hidden_units,
@@ -121,8 +150,7 @@ class InvertedPendulumEncoderWithAction(_InvertedPendulumEncoder, encoders.Encod
             action = F.one_hot(
                 action.view(-1).long(), num_classes=self.action_size
             ).float()
-        x = x[:, 1:]
-        x = torch.cat([x, action], dim=1)
+        x = torch.cat([self._project(x), action], dim=1)
         h = self._fc_encode(x)
         if self._use_batch_norm:
             h = self._bns[-1](h)
@@ -134,10 +162,10 @@ class InvertedPendulumEncoderWithAction(_InvertedPendulumEncoder, encoders.Encod
     def action_size(self) -> int:
         return self._action_size
 
-class InvertedPendulumEncoderFactory(encoders.EncoderFactory):
+class SymmetryEncoderFactory(encoders.EncoderFactory):
     # Modification of VectorEncoderFactory
 
-    TYPE: ClassVar[str] = "inverted_pendulum"
+    TYPE: ClassVar[str] = "symmetry"
     _hidden_units: Sequence[int]
     _activation: str
     _use_batch_norm: bool
@@ -146,6 +174,8 @@ class InvertedPendulumEncoderFactory(encoders.EncoderFactory):
     
     def __init__(
         self,
+        project, # Used for symmetries
+        projection_size: int, # Used for symmetries. 
         hidden_units: Optional[Sequence[int]] = None,
         activation: str = "relu",
         use_batch_norm: bool = False,
@@ -160,12 +190,16 @@ class InvertedPendulumEncoderFactory(encoders.EncoderFactory):
         self._use_batch_norm = use_batch_norm
         self._dropout_rate = dropout_rate
         self._use_dense = use_dense
+        self._projection_size = projection_size
+        self._project = project
 
-        print("Using InvertedPendulumEncoderFactory")
+        print("Using SymmetryEncoderFactory")
 
-    def create(self, observation_shape: Sequence[int]) -> InvertedPendulumEncoder:
+    def create(self, observation_shape: Sequence[int]) -> SymmetryEncoder:
         assert len(observation_shape) == 1
-        return InvertedPendulumEncoder(
+        return SymmetryEncoder(
+            project=self._project,
+            projection_size=self._projection_size,
             observation_shape=observation_shape,
             hidden_units=self._hidden_units,
             use_batch_norm=self._use_batch_norm,
@@ -179,9 +213,11 @@ class InvertedPendulumEncoderFactory(encoders.EncoderFactory):
         observation_shape: Sequence[int],
         action_size: int,
         discrete_action: bool = False,
-    ) -> InvertedPendulumEncoderWithAction:
+    ) -> SymmetryEncoderWithAction:
         assert len(observation_shape) == 1
-        return InvertedPendulumEncoderWithAction(
+        return SymmetryEncoderWithAction(
+            project=self._project,
+            projection_size=self._projection_size,
             observation_shape=observation_shape,
             action_size=action_size,
             hidden_units=self._hidden_units,
@@ -203,7 +239,9 @@ class InvertedPendulumEncoderFactory(encoders.EncoderFactory):
             "use_batch_norm": self._use_batch_norm,
             "dropout_rate": self._dropout_rate,
             "use_dense": self._use_dense,
+            "project": self._project,
+            "projection_size": self._projection_size
         }
         return params
 
-encoders.register_encoder_factory(InvertedPendulumEncoderFactory)
+encoders.register_encoder_factory(SymmetryEncoderFactory)
