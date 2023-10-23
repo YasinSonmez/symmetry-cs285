@@ -1,0 +1,54 @@
+{
+  "action_scaler": null,
+  "batch_size": 100,
+  "discrete_action": false,
+  "gamma": 1.0,
+  "generated_maxlen": 100000,
+  "learning_rate": 0.0001,
+  "n_ensembles": 5,
+  "n_frames": 1,
+  "n_steps": 1,
+  "optim_factory": {
+    "optim_cls": "Adam",
+    "betas": [
+      0.9,
+      0.999
+    ],
+    "eps": 1e-08,
+    "weight_decay": 0.0001,
+    "amsgrad": false
+  },
+  "real_ratio": 1.0,
+  "reward_encoder_factory": {
+    "type": "default",
+    "params": {
+      "activation": "relu",
+      "use_batch_norm": false,
+      "dropout_rate": null
+    }
+  },
+  "reward_scaler": null,
+  "scaler": null,
+  "state_encoder_factory": {
+    "type": "symmetry",
+    "params": {
+      "hidden_units": [
+        256,
+        256
+      ],
+      "activation": "relu",
+      "use_batch_norm": false,
+      "dropout_rate": null,
+      "use_dense": false,
+      "project": "reacher_project",
+      "projection_size": 3
+    }
+  },
+  "use_gpu": 0,
+  "variance_type": "max",
+  "algorithm": "ProbabilisticEnsembleDynamics",
+  "observation_shape": [
+    8
+  ],
+  "action_size": 2
+}
