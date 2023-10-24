@@ -16,8 +16,8 @@ def reacher_project(x):
 
 def observation_edit1(obs):
     new_obs = np.zeros(8)
-    new_obs[0] = np.arccos(obs[0])
-    new_obs[1] = np.arccos(obs[1])
+    new_obs[0] = np.arctan2(obs[2], obs[0])
+    new_obs[1] = np.arctan2(obs[3], obs[1])
     new_obs[2:] = obs[4:-1]
     return new_obs
 
@@ -33,7 +33,7 @@ def experiment_dynamics_training(dataset, symmetry_project, projection_size, n_r
                 dynamics = d3rlpy.dynamics.ProbabilisticEnsembleDynamics(learning_rate=1e-4, use_gpu=use_gpu)
             dynamics.fit(train_episodes,
                  eval_episodes=test_episodes,
-                 n_epochs=1,
+                 n_epochs=100,
                  scorers={
                     'observation_error': d3rlpy.metrics.scorer.dynamics_observation_prediction_error_scorer,
                     'reward_error': d3rlpy.metrics.scorer.dynamics_reward_prediction_error_scorer,
@@ -86,7 +86,7 @@ def experiment_COMBO_training(dataset, eval_env, experiment_name, save_name, mod
             # give COMBO as the generator argument.
             combo = COMBO(dynamics=dynamics, critic_encoder_factory=encoder, actor_encoder_factory=encoder, use_gpu=use_gpu,
                     actor_learning_rate=0.00003, critic_learning_rate=0.0001, conservative_weight=5)
-            combo.fit(dataset = train_episodes, eval_episodes=test_episodes, n_steps=10, n_steps_per_epoch=10,
+            combo.fit(dataset = train_episodes, eval_episodes=test_episodes, n_steps=100000, n_steps_per_epoch=1000,
                       tensorboard_dir="tensorboard_logs",
                      scorers={
                         'environment': d3rlpy.metrics.scorer.evaluate_on_environment(eval_env)
