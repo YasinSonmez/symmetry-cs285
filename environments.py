@@ -12,7 +12,7 @@ class RewardAssymetricInvertedPendulum(InvertedPendulumEnv):
         obs, _reward, done, info = super().step(action)
         diff = obs[0] - self.goal_x
         b = 2
-        c = 1.5
+        c = 3 # 1.5
         reward = b/(np.power(c, diff) + np.power(c, -diff))
         # reward = -diff**2
 
