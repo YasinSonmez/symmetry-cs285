@@ -8,6 +8,8 @@ import encoders
 import os
 import json
 
+EXP_NAME= "exp_9_reacher"
+
 def inverted_pendulum_project(x):
     return x[:, 1:]
 
@@ -15,10 +17,10 @@ def reacher_project(x):
     return x[:, [1,4,5]]
 
 def observation_edit1(obs):
-    new_obs = np.zeros(8)
+    new_obs = np.zeros(6)
     new_obs[0] = np.arctan2(obs[2], obs[0])
     new_obs[1] = np.arctan2(obs[3], obs[1])
-    new_obs[2:] = obs[4:-1]
+    new_obs[2:] = obs[4:-3]
     return new_obs
 
 def experiment_dynamics_training(dataset, symmetry_project, projection_size, n_runs, experiment_name, seed=1, use_gpu=True):
@@ -26,14 +28,16 @@ def experiment_dynamics_training(dataset, symmetry_project, projection_size, n_r
         for exp_type in ['symmetry', 'default']:
             # use the same seeds for default and symmetric runs
             train_episodes, test_episodes = train_test_split(dataset, random_state=seed+i)
+            small_encoder = d3rlpy.models.encoders.VectorEncoderFactory(hidden_units=[256, 256], dropout_rate=0.2)
             if exp_type == 'symmetry':
-                state_encoder_factory = encoders.SymmetryEncoderFactory(project=symmetry_project, projection_size=projection_size)
-                dynamics = d3rlpy.dynamics.ProbabilisticEnsembleDynamics(learning_rate=1e-4, use_gpu=use_gpu, state_encoder_factory=state_encoder_factory)
+                state_encoder_factory = encoders.SymmetryEncoderFactory(project=symmetry_project, projection_size=projection_size, hidden_units=[256,256], dropout_rate=0.2)
+                dynamics = d3rlpy.dynamics.ProbabilisticEnsembleDynamics(learning_rate=2e-4, use_gpu=use_gpu, state_encoder_factory=state_encoder_factory, reward_encoder_factory=small_encoder)
             else:
-                dynamics = d3rlpy.dynamics.ProbabilisticEnsembleDynamics(learning_rate=1e-4, use_gpu=use_gpu)
+                dynamics = d3rlpy.dynamics.ProbabilisticEnsembleDynamics(learning_rate=2e-4, use_gpu=use_gpu, state_encoder_factory=small_encoder, reward_encoder_factory=small_encoder)
             dynamics.fit(train_episodes,
                  eval_episodes=test_episodes,
-                 n_epochs=100,
+                 n_steps=500000,
+                 n_steps_per_epoch=5000,
                  scorers={
                     'observation_error': d3rlpy.metrics.scorer.dynamics_observation_prediction_error_scorer,
                     'reward_error': d3rlpy.metrics.scorer.dynamics_reward_prediction_error_scorer,
@@ -60,7 +64,7 @@ def experiment_COMBO_training(dataset, eval_env, experiment_name, save_name, mod
         model_path_i_params = json.load(f)
         if(model_path_i_params["state_encoder_factory"]['type']=='symmetry'):
             symmetry_reduced_paths.append(model_path_i)
-        elif(model_path_i_params["state_encoder_factory"]['type']=='default'):
+        else:
             default_paths.append(model_path_i)
     print("Default_paths:", default_paths, "Symmetry reduced paths: ", symmetry_reduced_paths)
 
@@ -112,15 +116,15 @@ env.reset(seed=seed)
 eval_env.reset(seed=seed)
 
 env1 = TransformObservation(env, observation_edit1)
-env1.observation_space = gym.spaces.Box(-np.inf, np.inf, shape=(8,), dtype= np.float64 )
+env1.observation_space = gym.spaces.Box(-np.inf, np.inf, shape=(6,), dtype= np.float64 )
 print(env1.reset(seed=seed))
 
 eval_env1 = TransformObservation(eval_env, observation_edit1)
-eval_env1.observation_space = gym.spaces.Box(-np.inf, np.inf, shape=(8,), dtype= np.float64 )
+eval_env1.observation_space = gym.spaces.Box(-np.inf, np.inf, shape=(6,), dtype= np.float64 )
 print(env1.reset(seed=seed))
 
 # Dataset
-dataset = d3rlpy.dataset.MDPDataset.load('d3rlpy_data/reacherv2_atan2.h5')
+dataset = d3rlpy.dataset.MDPDataset.load('d3rlpy_data/reacherv2_atan2_fixed.h5')
 
-experiment_dynamics_training(dataset=dataset, symmetry_project=reacher_project, projection_size=3, n_runs=3, experiment_name="exp_6_dynamics_reacher", use_gpu=True)
-experiment_COMBO_training(dataset, eval_env1, 'exp_6', save_name='exp_6_COMBO_reacher', models_dir='d3rlpy_logs/', symmetry_project=reacher_project, projection_size=3, seed=1, use_gpu=True)
+#experiment_dynamics_training(dataset=dataset, symmetry_project=reacher_project, projection_size=3, n_runs=3, experiment_name=EXP_NAME+'_dynamics', use_gpu=True)
+experiment_COMBO_training(dataset, eval_env1, EXP_NAME, save_name=EXP_NAME+'_COMBO', models_dir='d3rlpy_logs/', symmetry_project=reacher_project, projection_size=3, seed=1, use_gpu=True)
