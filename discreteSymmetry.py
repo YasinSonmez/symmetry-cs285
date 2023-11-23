@@ -93,18 +93,30 @@ def main(args):
     state_permutation = ([2, 3, 4, 11, 12, 13], [5, 6, 7, 14, 15, 16])
     action_permutation = ([0, 1, 2], [3, 4, 5])
 
-    if augmentation:
-        augment_data(data_dict, state_permutation, action_permutation)
-
+    # Use the same test episodes in each
     dataset = MDPDataset(data_dict['observations'], data_dict['actions'], data_dict['rewards'], np.logical_or(data_dict['terminals'], data_dict['timeouts']))
+    train_episodes, test_episodes = train_test_split(dataset, random_state=seed, train_size=0.1)
+    
+    permutation_matrices = None
+    if augmentation=='Full':
+        augment_data(data_dict, state_permutation, action_permutation)
+        dataset = MDPDataset(data_dict['observations'], data_dict['actions'], data_dict['rewards'], np.logical_or(data_dict['terminals'], data_dict['timeouts']))
+        train_episodes, _ = train_test_split(dataset, random_state=seed, train_size=0.1)
+    elif augmentation=='Stochastic':
+        m = data_dict['observations'].shape[1]
+        n = data_dict['actions'].shape[1]
+
+        P_s = create_permutation_matrix(m, state_permutation[0], state_permutation[1])
+        P_a = create_permutation_matrix(n, action_permutation[0], action_permutation[1])
+        permutation_matrices = (P_s, P_a)
+
     del data_dict
 
-    train_episodes, test_episodes = train_test_split(dataset, random_state=seed, train_size=0.1)
     dynamics = d3rlpy.dynamics.ProbabilisticEnsembleDynamics(learning_rate=2e-4, use_gpu=True) # Baseline
     # same as algorithms
     dynamics.fit(train_episodes,
                 eval_episodes=test_episodes,
-                n_epochs=500,
+                n_steps=300000,
                 n_steps_per_epoch=1000,
                 scorers={
                     'observation_error': d3rlpy.metrics.scorer.dynamics_observation_prediction_error_scorer,
@@ -112,7 +124,8 @@ def main(args):
                     'variance': d3rlpy.metrics.scorer.dynamics_prediction_variance_scorer,
                 },
                 tensorboard_dir='tensorboard_logs/dynamics',
-                experiment_name='augmentation_'+str(augmentation)+'_exp1')
+                experiment_name='augmentation_'+str(augmentation)+'_exp2',
+                permutation_matrices=permutation_matrices)
 
 
 if __name__ == "__main__":

@@ -745,6 +745,7 @@ class LearnableBase:
             dictionary of metrics.
 
         """
+        print('wtf1')
         loss = self._update(batch)
         self._grad_step += 1
         return loss

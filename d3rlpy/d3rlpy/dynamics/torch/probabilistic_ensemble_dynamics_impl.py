@@ -107,16 +107,25 @@ class ProbabilisticEnsembleDynamicsImpl(TorchImplBase):
 
     @train_api
     @torch_api()
-    def update(self, batch: TorchMiniBatch) -> np.ndarray:
+    def update(self, batch: TorchMiniBatch, P_s=None, P_a=None) -> np.ndarray:
         assert self._dynamics is not None
         assert self._optim is not None
 
-        loss = self._dynamics.compute_error(
-            observations=batch.observations,
-            actions=batch.actions,
-            rewards=batch.rewards,
-            next_observations=batch.next_observations,
-        )
+        if P_s is not None and P_a is not None and np.random.rand()>0.5:
+            loss = self._dynamics.compute_error(
+                observations=batch.observations@P_s.T,
+                actions=batch.actions@P_a.T,
+                rewards=batch.rewards,
+                next_observations=batch.next_observations@P_s.T,
+            )
+        else:
+            loss = self._dynamics.compute_error(
+                observations=batch.observations,
+                actions=batch.actions,
+                rewards=batch.rewards,
+                next_observations=batch.next_observations,
+            )
+
 
         self._optim.zero_grad()
         loss.backward()
