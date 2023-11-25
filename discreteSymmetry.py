@@ -55,6 +55,42 @@ def create_permutation_matrix(size, source_indices, target_indices):
 
     return perm_matrix
 
+def create_train_merge_matrix(m, source_indices, target_indices):
+    """
+    Create two matrices that prepares the data to train with symmetry and merge afterwards
+
+    :param m: Size of the state space
+    :param source_indices: List of indices to be permuted
+    :param target_indices: List of target indices where source indices should be moved
+    :return: train_matrix: removes the rows with target indices from the data
+    merge_matrix: takes input of size 2(m-len*(target_indices)) and merges them into 
+    next observations data of size m by averaging the common parts and merging different parts
+    """
+    if len(source_indices) != len(target_indices):
+        raise ValueError("Source and target indices lists must be of the same length")
+
+    # Create an identity matrix
+    train_matrix = np.identity(m)
+    train_matrix = np.delete(train_matrix, target_indices, axis=0)
+
+    t = m - len(target_indices) # size of new data
+    merge_matrix = np.zeros((m, 2*t))
+    reduced_idx=0
+    for i in range(m):
+        if i not in source_indices and i not in target_indices:
+            # common states, average
+            merge_matrix[i, reduced_idx] = 0.5
+            merge_matrix[i, t + reduced_idx] = 0.5
+            reduced_idx += 1
+        elif i in source_indices:
+            permutation_idx = np.where(np.array(source_indices) == i)[0][0]
+            target_i = target_indices[permutation_idx]
+            merge_matrix[i, reduced_idx] = 1
+            merge_matrix[target_i, t + reduced_idx] = 1
+            reduced_idx += 1
+
+    return train_matrix, merge_matrix
+
 def augment_data(data_dict, state_permutation, action_permutation):
     m = data_dict['observations'].shape[1]
     n = data_dict['actions'].shape[1]
@@ -76,43 +112,30 @@ def main(args):
     with open(args.cfg, 'r') as file:
         config = yaml.safe_load(file)
     augmentation = config['augmentation']
-
+    reduction = config['reduction']
+    state_permutation = np.array(config['state_permutation'])
+    action_permutation = np.array(config['action_permutation'])
+    file_path = config['file_path']
+    
     print(gym.version.VERSION)
     seed = 1
     d3rlpy.seed(seed)
     use_gpu = True
-    # prepare environment
-    #env = gym.make("Walker2d-v2")
-    #eval_env = gym.make("Walker2d-v2")
-    #env.reset(seed=seed)
-    #eval_env.reset(seed=seed)
         
-    file_path = 'd3rlpy_data/walker2d_expert-v2.hdf5'  # Replace with the path to your HDF5 file
     data_dict = read_hdf5_to_dict(file_path)
-
-    state_permutation = ([2, 3, 4, 11, 12, 13], [5, 6, 7, 14, 15, 16])
-    action_permutation = ([0, 1, 2], [3, 4, 5])
-
     # Use the same test episodes in each
     dataset = MDPDataset(data_dict['observations'], data_dict['actions'], data_dict['rewards'], np.logical_or(data_dict['terminals'], data_dict['timeouts']))
     train_episodes, test_episodes = train_test_split(dataset, random_state=seed, train_size=0.1)
-    
-    permutation_matrices = None
-    if augmentation=='Full':
-        augment_data(data_dict, state_permutation, action_permutation)
-        dataset = MDPDataset(data_dict['observations'], data_dict['actions'], data_dict['rewards'], np.logical_or(data_dict['terminals'], data_dict['timeouts']))
-        train_episodes, _ = train_test_split(dataset, random_state=seed, train_size=0.1)
-    elif augmentation=='Stochastic':
-        m = data_dict['observations'].shape[1]
-        n = data_dict['actions'].shape[1]
-
-        P_s = create_permutation_matrix(m, state_permutation[0], state_permutation[1])
-        P_a = create_permutation_matrix(n, action_permutation[0], action_permutation[1])
-        permutation_matrices = (P_s, P_a)
 
     del data_dict
 
-    dynamics = d3rlpy.dynamics.ProbabilisticEnsembleDynamics(learning_rate=2e-4, use_gpu=True) # Baseline
+    if reduction == True:
+        permutation_indices = (state_permutation, action_permutation)
+    else:
+        permutation_indices = None
+
+    small_encoder = d3rlpy.models.encoders.VectorEncoderFactory(hidden_units=[256, 256], dropout_rate=0.2)
+    dynamics = d3rlpy.dynamics.ProbabilisticEnsembleDynamics(learning_rate=2e-4, use_gpu=True, n_ensembles=3, state_encoder_factory=small_encoder, reward_encoder_factory=small_encoder, permutation_indices=permutation_indices, augmentation=augmentation, reduction=reduction)
     # same as algorithms
     dynamics.fit(train_episodes,
                 eval_episodes=test_episodes,
@@ -124,8 +147,7 @@ def main(args):
                     'variance': d3rlpy.metrics.scorer.dynamics_prediction_variance_scorer,
                 },
                 tensorboard_dir='tensorboard_logs/dynamics',
-                experiment_name='augmentation_'+str(augmentation)+'_exp2',
-                permutation_matrices=permutation_matrices)
+                experiment_name='augmentation_'+str(augmentation)+'_exp3')
 
 
 if __name__ == "__main__":

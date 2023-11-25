@@ -204,6 +204,9 @@ def create_probabilistic_ensemble_dynamics_model(
     reward_encoder_factory: EncoderFactory,
     n_ensembles: int = 5,
     discrete_action: bool = False,
+    permutation_indices = None,
+    augmentation = None,
+    reduction = None,
 ) -> ProbabilisticEnsembleDynamicsModel:
     models = []
     for _ in range(n_ensembles):
@@ -217,7 +220,11 @@ def create_probabilistic_ensemble_dynamics_model(
             action_size=action_size,
             discrete_action=discrete_action,
         )
-        model = ProbabilisticDynamicsModel(state_encoder, reward_encoder)
+        model = ProbabilisticDynamicsModel(state_encoder, 
+            reward_encoder,
+            permutation_indices = permutation_indices,
+            augmentation = augmentation,
+            reduction = reduction,)
         models.append(model)
     return ProbabilisticEnsembleDynamicsModel(models)
 

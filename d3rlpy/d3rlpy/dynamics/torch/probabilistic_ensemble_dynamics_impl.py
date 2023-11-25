@@ -41,6 +41,9 @@ class ProbabilisticEnsembleDynamicsImpl(TorchImplBase):
         action_scaler: Optional[ActionScaler],
         reward_scaler: Optional[RewardScaler],
         use_gpu: Optional[Device],
+        permutation_indices=None,
+        augmentation=None,
+        reduction=None,
     ):
         super().__init__(
             observation_shape=observation_shape,
@@ -57,6 +60,9 @@ class ProbabilisticEnsembleDynamicsImpl(TorchImplBase):
         self._variance_type = variance_type
         self._discrete_action = discrete_action
         self._use_gpu = use_gpu
+        self._permutation_indices=permutation_indices
+        self._augmentation=augmentation
+        self._reduction=reduction
 
         # initialized in build
         self._dynamics = None
@@ -79,6 +85,9 @@ class ProbabilisticEnsembleDynamicsImpl(TorchImplBase):
             self._reward_encoder_factory,
             n_ensembles=self._n_ensembles,
             discrete_action=self._discrete_action,
+            permutation_indices = self._permutation_indices,
+            augmentation = self._augmentation,
+            reduction=self._reduction
         )
 
     def _build_optim(self) -> None:
@@ -107,25 +116,16 @@ class ProbabilisticEnsembleDynamicsImpl(TorchImplBase):
 
     @train_api
     @torch_api()
-    def update(self, batch: TorchMiniBatch, P_s=None, P_a=None) -> np.ndarray:
+    def update(self, batch: TorchMiniBatch) -> np.ndarray:
         assert self._dynamics is not None
         assert self._optim is not None
 
-        if P_s is not None and P_a is not None and np.random.rand()>0.5:
-            loss = self._dynamics.compute_error(
-                observations=batch.observations@P_s.T,
-                actions=batch.actions@P_a.T,
-                rewards=batch.rewards,
-                next_observations=batch.next_observations@P_s.T,
-            )
-        else:
-            loss = self._dynamics.compute_error(
-                observations=batch.observations,
-                actions=batch.actions,
-                rewards=batch.rewards,
-                next_observations=batch.next_observations,
-            )
-
+        loss = self._dynamics.compute_error(
+            observations=batch.observations,
+            actions=batch.actions,
+            rewards=batch.rewards,
+            next_observations=batch.next_observations,
+        )
 
         self._optim.zero_grad()
         loss.backward()

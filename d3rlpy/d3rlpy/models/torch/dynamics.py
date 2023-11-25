@@ -9,7 +9,7 @@ from torch.distributions import Normal
 from torch.nn.utils import spectral_norm
 
 from .encoders import EncoderWithAction
-
+import numpy as np
 
 def _compute_ensemble_variance(
     observations: torch.Tensor,
@@ -42,6 +42,29 @@ def _gaussian_likelihood(
     return 0.5 * (((mu - x) ** 2) * inv_var).sum(dim=1, keepdim=True)
 
 
+def create_permutation_matrix(size, source_indices, target_indices):
+    """
+    Create a permutation matrix of given size that permutes rows from source_indices to target_indices.
+
+    :param size: Size of the square permutation matrix
+    :param source_indices: List of indices to be permuted
+    :param target_indices: List of target indices where source indices should be moved
+    :return: Permutation matrix of size 'size x size'
+    """
+    if len(source_indices) != len(target_indices):
+        raise ValueError("Source and target indices lists must be of the same length")
+
+    # Create an identity matrix
+    perm_matrix = np.identity(size)
+
+    # Apply the permutations
+    for src, tgt in zip(source_indices, target_indices):
+        perm_matrix[[src, tgt]] = perm_matrix[[tgt, src]]
+
+    perm_matrix = torch.from_numpy(perm_matrix).to(torch.float)
+    perm_matrix.requires_grad = False
+    return perm_matrix
+
 class ProbabilisticDynamicsModel(nn.Module):  # type: ignore
     """Probabilistic dynamics model.
 
@@ -60,17 +83,32 @@ class ProbabilisticDynamicsModel(nn.Module):  # type: ignore
     _max_logstd: nn.Parameter
     _min_logstd: nn.Parameter
 
-    def __init__(self, state_encoder: EncoderWithAction, reward_encoder: EncoderWithAction):
+    def __init__(self, state_encoder: EncoderWithAction, 
+                reward_encoder: EncoderWithAction,
+                permutation_indices = None,
+                augmentation = None,
+                reduction = None,
+                ):
         super().__init__()
         # apply spectral normalization except logstd encoder.
         _apply_spectral_norm_recursively(cast(nn.Module, state_encoder))
         _apply_spectral_norm_recursively(cast(nn.Module, reward_encoder))
         self._state_encoder = state_encoder
         self._reward_encoder = reward_encoder
+        self._permutation_indices = permutation_indices
+        self._augmentation = augmentation
+        self._reduction = reduction
 
         state_feature_size = state_encoder.get_feature_size() # TODO: do I need to enforce feature and observation size are common between the state and reward encoders?
         reward_feature_size = reward_encoder.get_feature_size()
         observation_size = state_encoder.observation_shape[0]
+        action_size = state_encoder.action_size
+        if permutation_indices is not None:
+            self._P_s = create_permutation_matrix(observation_size, self._permutation_indices[0][0], self._permutation_indices[0][1])
+            self._P_a = create_permutation_matrix(action_size, self._permutation_indices[1][0], self._permutation_indices[1][1])
+        else:
+            self._P_s = None
+            self._P_a = None
         # out_size = observation_size + 1
         out_size = observation_size
 
@@ -123,6 +161,14 @@ class ProbabilisticDynamicsModel(nn.Module):  # type: ignore
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         # mu, logstd = self.compute_stats(x, action)
         state_mu, reward_mu, state_logstd, reward_logstd = self.compute_stats(x, action)
+        if self._P_s is not None:
+            # transform before input
+            state_mu2, _, state_logstd2, _ = self.compute_stats(x@self._P_s.T, action@self._P_a.T)
+            # reverse transform after input
+            state_mu2 = state_mu2@self._P_s.T
+            state_logstd2 = state_logstd2@self._P_s.T
+            state_mu = (state_mu + state_mu2)/2
+            state_logstd = (state_logstd + state_logstd2)/2
 
         state_dist = Normal(state_mu, state_logstd.exp())
         state_pred = state_dist.rsample()
@@ -141,8 +187,20 @@ class ProbabilisticDynamicsModel(nn.Module):  # type: ignore
         rewards: torch.Tensor,
         next_observations: torch.Tensor,
     ) -> torch.Tensor:
+        # mu, logstd = self.compute_stats(x, action)
         state_mu, reward_mu, state_logstd, reward_logstd = self.compute_stats(observations, actions)
-         # residual prediction
+        if self._P_s is not None:
+            device = observations.device
+            self._P_s = self._P_s.to(device)
+            self._P_a = self._P_a.to(device)
+            # transform before input
+            state_mu2, _, state_logstd2, _ = self.compute_stats(observations@self._P_s.T, actions@self._P_a.T)
+            # reverse transform after input
+            state_mu2 = state_mu2@self._P_s.T
+            state_logstd2 = state_logstd2@self._P_s.T
+            state_mu = (state_mu + state_mu2)/2
+            state_logstd = (state_logstd + state_logstd2)/2
+        # residual prediction
         mu_x = observations + state_mu
         mu_reward = reward_mu.view(-1, 1)
         logstd_x = state_logstd

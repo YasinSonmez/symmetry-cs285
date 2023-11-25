@@ -1,1 +1,5 @@
-augmentation: 'None'
+augmentation: False
+reduction: False
+state_permutation:  [[2, 3, 4, 11, 12, 13], [5, 6, 7, 14, 15, 16]]
+action_permutation: [[0, 1, 2], [3, 4, 5]]
+file_path: 'd3rlpy_data/walker2d_expert-v2.hdf5'
