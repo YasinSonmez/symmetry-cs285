@@ -10,6 +10,7 @@ from torch.nn.utils import spectral_norm
 
 from .encoders import EncoderWithAction
 import numpy as np
+from itertools import combinations
 
 def _compute_ensemble_variance(
     observations: torch.Tensor,
@@ -65,6 +66,21 @@ def create_permutation_matrix(size, source_indices, target_indices):
     perm_matrix.requires_grad = False
     return perm_matrix
 
+def create_pairwise_permutation_matrices(size, perm_indices, pairs):
+    """
+    Create a permutation matrix of given size that permutes rows from source_indices to target_indices.
+
+    :param size: Size of the square permutation matrix
+    :param perm_indices: List of List of indices to be permuted
+    :return: Permutation matrix of size 'size x size'
+    """
+    
+    perm_matrices = []
+    for pair in pairs:
+        perm_matrices.append(create_permutation_matrix(size, perm_indices[pair[0]], perm_indices[pair[1]]))
+        
+    return perm_matrices
+
 class ProbabilisticDynamicsModel(nn.Module):  # type: ignore
     """Probabilistic dynamics model.
 
@@ -104,8 +120,10 @@ class ProbabilisticDynamicsModel(nn.Module):  # type: ignore
         observation_size = state_encoder.observation_shape[0]
         action_size = state_encoder.action_size
         if permutation_indices is not None:
-            self._P_s = create_permutation_matrix(observation_size, self._permutation_indices[0][0], self._permutation_indices[0][1])
-            self._P_a = create_permutation_matrix(action_size, self._permutation_indices[1][0], self._permutation_indices[1][1])
+            m = len(self._permutation_indices)
+            pairs = np.array(list(combinations(list(range(m)), 2)))
+            self._P_s = create_pairwise_permutation_matrices(observation_size, self._permutation_indices[0], pairs)
+            self._P_a = create_pairwise_permutation_matrices(action_size, self._permutation_indices[1], pairs)
         else:
             self._P_s = None
             self._P_a = None
@@ -161,14 +179,19 @@ class ProbabilisticDynamicsModel(nn.Module):  # type: ignore
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         # mu, logstd = self.compute_stats(x, action)
         state_mu, reward_mu, state_logstd, reward_logstd = self.compute_stats(x, action)
-        if self._P_s is not None:
-            # transform before input
-            state_mu2, _, state_logstd2, _ = self.compute_stats(x@self._P_s.T, action@self._P_a.T)
-            # reverse transform after input
-            state_mu2 = state_mu2@self._P_s.T
-            state_logstd2 = state_logstd2@self._P_s.T
-            state_mu = (state_mu + state_mu2)/2
-            state_logstd = (state_logstd + state_logstd2)/2
+        if self._reduction:
+            state_mus = [state_mu]
+            state_logstds = [state_logstd]
+            for (P_s, P_a) in zip(self._P_s, self._P_a):
+                # transform before input
+                state_mu2, _, state_logstd2, _ = self.compute_stats(x@P_s.T, action@P_a.T)
+                # reverse transform after input
+                state_mu2 = state_mu2@P_s.T
+                state_logstd2 = state_logstd2@P_s.T
+                state_mus.append(state_mu2)
+                state_logstds.append(state_logstd2)
+                state_mu = torch.stack(state_mus).mean(axis=0)
+                state_logstd = torch.stack(state_logstds).mean(axis=0)
 
         state_dist = Normal(state_mu, state_logstd.exp())
         state_pred = state_dist.rsample()
@@ -187,19 +210,35 @@ class ProbabilisticDynamicsModel(nn.Module):  # type: ignore
         rewards: torch.Tensor,
         next_observations: torch.Tensor,
     ) -> torch.Tensor:
-        # mu, logstd = self.compute_stats(x, action)
-        state_mu, reward_mu, state_logstd, reward_logstd = self.compute_stats(observations, actions)
         if self._P_s is not None:
             device = observations.device
-            self._P_s = self._P_s.to(device)
-            self._P_a = self._P_a.to(device)
-            # transform before input
-            state_mu2, _, state_logstd2, _ = self.compute_stats(observations@self._P_s.T, actions@self._P_a.T)
-            # reverse transform after input
-            state_mu2 = state_mu2@self._P_s.T
-            state_logstd2 = state_logstd2@self._P_s.T
-            state_mu = (state_mu + state_mu2)/2
-            state_logstd = (state_logstd + state_logstd2)/2
+            for i in range(len(self._P_s)):
+                self._P_s[i] = self._P_s[i].to(device)
+                self._P_a[i] = self._P_a[i].to(device)
+
+        if self._augmentation:
+            symmetry_count = len(self._P_s)
+            if np.random.rand()<1/(1+symmetry_count):
+                i = np.random.randint(symmetry_count)
+                observations = observations@self._P_s[i].T
+                next_observations = next_observations@self._P_s[i].T
+                actions = actions@self._P_a[i].T
+
+        # mu, logstd = self.compute_stats(x, action)
+        state_mu, reward_mu, state_logstd, reward_logstd = self.compute_stats(observations, actions)            
+        if self._reduction:
+            state_mus = [state_mu]
+            state_logstds = [state_logstd]
+            for (P_s, P_a) in zip(self._P_s, self._P_a):
+                # transform before input
+                state_mu2, _, state_logstd2, _ = self.compute_stats(observations@P_s.T, actions@P_a.T)
+                # reverse transform after input
+                state_mu2 = state_mu2@P_s.T
+                state_logstd2 = state_logstd2@P_s.T
+                state_mus.append(state_mu2)
+                state_logstds.append(state_logstd2)
+                state_mu = torch.stack(state_mus).mean(axis=0)
+                state_logstd = torch.stack(state_logstds).mean(axis=0)
         # residual prediction
         mu_x = observations + state_mu
         mu_reward = reward_mu.view(-1, 1)

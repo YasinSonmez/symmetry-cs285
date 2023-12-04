@@ -1,3 +1,4 @@
+env_name: "Walker2d-v2"
 augmentation: True
 reduction: False
 state_permutation:  [[2, 3, 4, 11, 12, 13], [5, 6, 7, 14, 15, 16]]
