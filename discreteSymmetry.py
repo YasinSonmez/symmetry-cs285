@@ -6,6 +6,7 @@ import numpy as np
 from d3rlpy.dataset import MDPDataset
 from d3rlpy.algos import COMBO
 from sklearn.model_selection import train_test_split
+from gym.wrappers import TransformObservation
 import gym
 from gym.wrappers import TransformObservation
 import encoders
@@ -13,7 +14,13 @@ import os
 import yaml
 import argparse
 import json
+# TH 20220201
+import static
+from combo_modTH import COMBOModTH
 
+
+def observation_edit_ant(obs):
+    return obs[:27]
 
 def read_hdf5_to_dict(file_name):
     data = {}
@@ -155,12 +162,23 @@ def experiment_COMBO_training(dataset, eval_env, experiment_name, save_name, mod
         print("Loaded model: ", latest_model_path)
         
         #encoder = d3rlpy.models.encoders.DefaultEncoderFactory(dropout_rate=0.2)
-        encoder = d3rlpy.models.encoders.VectorEncoderFactory(hidden_units=[256, 256, 256], dropout_rate=0.1)
+        encoder = d3rlpy.models.encoders.VectorEncoderFactory(hidden_units=[256, 256, 256], dropout_rate=0.2)
         # give COMBO as the generator argument.
-        combo = COMBO(dynamics=dynamics, critic_encoder_factory=encoder, actor_encoder_factory=encoder, use_gpu=use_gpu, 
-                      critic_learning_rate=0.0001, actor_learning_rate=0.00001,
-                      rollout_horizon=1, real_ratio=0.8)
-        combo.fit(dataset = train_episodes, eval_episodes=test_episodes, n_steps=500000, n_steps_per_epoch=1000,
+        # # TH 20220203
+        #termination_fn = static['walker2d'].termination_fn
+        termination_fn = static['ant'].termination_fn
+        optim = d3rlpy.models.optimizers.AdamFactory(weight_decay=2.5e-5)
+        combo = COMBOModTH(dynamics=dynamics, critic_encoder_factory=encoder, actor_encoder_factory=encoder, use_gpu=use_gpu, 
+                      #critic_learning_rate=0.0001, actor_learning_rate=0.00001,
+                      critic_optim_factory=optim,
+                      actor_optim_factory=optim,
+                      #rollout_horizon=1, real_ratio=0.8,
+                      termination_fn=termination_fn, 
+                      conservative_weight=5
+                      )
+        # Edit the observations to not include contact forces
+        eval_env = TransformObservation(eval_env, observation_edit_ant)
+        combo.fit(dataset = dataset.episodes, eval_episodes=test_episodes, n_steps=2000000, n_steps_per_epoch=10000,
                     tensorboard_dir="tensorboard_logs",
                     scorers={
                     'environment': d3rlpy.metrics.scorer.evaluate_on_environment(eval_env)
@@ -183,7 +201,7 @@ def main(args):
     action_permutation = np.array(config['action_permutation'])
     env_name = config['env_name']
     file_path = config['file_path']
-    EXP_NAME = 'exp_ddasdasdas' + env_name
+    EXP_NAME = 'exp_10_' + env_name
     if args.COMBO is None:
         args.COMBO = False
     
@@ -197,7 +215,7 @@ def main(args):
         
     data_dict = read_hdf5_to_dict(file_path)
     # Use the same test episodes in each
-    dataset = MDPDataset(data_dict['observations'], data_dict['actions'], data_dict['rewards'], np.logical_or(data_dict['terminals'], data_dict['timeouts']))
+    dataset = MDPDataset(data_dict['observations'][:,:27], data_dict['actions'], data_dict['rewards'], np.logical_or(data_dict['terminals'], data_dict['timeouts']))
     train_episodes, test_episodes = train_test_split(dataset, random_state=seed, train_size=0.9)
 
     del data_dict
@@ -207,12 +225,15 @@ def main(args):
     else:
         permutation_indices = None
 
-    small_encoder = d3rlpy.models.encoders.VectorEncoderFactory(hidden_units=[256, 256], dropout_rate=0.2)
-    large_encoder = d3rlpy.models.encoders.VectorEncoderFactory(hidden_units=[200, 200, 200, 200], dropout_rate=0.2)
+    small_encoder = d3rlpy.models.encoders.VectorEncoderFactory(hidden_units=[256, 256], dropout_rate=0.2, activation='swish')
+    large_encoder = d3rlpy.models.encoders.VectorEncoderFactory(hidden_units=[200, 200, 200, 200], dropout_rate=0.2, activation='swish')
+    dynamics_optim = d3rlpy.models.optimizers.AdamFactory(weight_decay=2.5e-5)
 
-    dynamics = d3rlpy.dynamics.ProbabilisticEnsembleDynamics(learning_rate=3e-4, use_gpu=use_gpu, n_ensembles=3, 
+    dynamics = d3rlpy.dynamics.ProbabilisticEnsembleDynamics(learning_rate=3e-4, use_gpu=use_gpu, n_ensembles=5, 
                                                              state_encoder_factory=large_encoder, reward_encoder_factory=small_encoder, 
-                                                             permutation_indices=permutation_indices, augmentation=augmentation, 
+                                                             optim_factory=dynamics_optim,
+                                                             permutation_indices=permutation_indices, 
+                                                             augmentation=augmentation, 
                                                              reduction=reduction)
     # same as algorithms
     if args.dynamics:
@@ -235,7 +256,7 @@ def main(args):
 
         env.reset(seed=seed)
         eval_env.reset(seed=seed)
-        experiment_COMBO_training(dataset, eval_env, EXP_NAME, save_name= 'COMBO_'+ EXP_NAME+ '_seed_' + str(seed), models_dir='d3rlpy_logs/', seed=seed, use_gpu=use_gpu)
+        experiment_COMBO_training(dataset, eval_env, EXP_NAME, save_name= 'COMBO_'+ EXP_NAME+ '_seed_' + str(seed), models_dir='d3rlpy_logs/Ant-v2-med-expert/', seed=seed, use_gpu=use_gpu)
 
 if __name__ == "__main__":
     # Set up argument parsing

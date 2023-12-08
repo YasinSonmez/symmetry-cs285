@@ -18,13 +18,13 @@
 # Always at least twice the number of GPUs (savio2_gpu and GTX2080TI in savio3_gpu)
 # Four times the number for TITAN and V100 in savio3_gpu and A5000 in savio4_gpu
 # Eight times the number for A40 in savio3_gpu
-#SBATCH --cpus-per-task=3
+#SBATCH --cpus-per-task=2
 #
 #Number of GPUs, this can be in the format of "gpu:[1-4]", or "gpu:K80:[1-4] with the type included
 #SBATCH --gres=gpu:GTX2080TI:1
 #
 # Wall clock limit:
-#SBATCH --time=10:00:00
+#SBATCH --time=20:00:00
 #
 ## Command(s) to run (example):
 #module load cuda/10.2
@@ -55,20 +55,41 @@ python --version
 #python discreteSymmetry.py --cfg cfg/reductionAugmentation.yaml &
 
 # Define the range of seeds
-start_seed=2
+start_seed=1
 N_runs=1
 end_seed=$((start_seed + N_runs - 1))
 
 # Loop through the range
-for seed in $(seq $start_seed $end_seed)
-do
-    echo "Running script with seed $seed"
-    python discreteSymmetry.py --cfg cfg/noAugmentation.yaml --seed $seed --dynamics &
-    python discreteSymmetry.py --cfg cfg/reduction.yaml --seed $seed --dynamics &
-    python discreteSymmetry.py --cfg cfg/stochasticAugmentation.yaml --seed $seed --dynamics &
-    wait
-    echo "Script with seed $seed ended"
-done
+#for seed in $(seq $start_seed $end_seed)
+#do
+#    echo "Running script with seed $seed"
+#    python discreteSymmetry.py --cfg cfg/noAugmentation.yaml --seed $seed --dynamics &
+#    python discreteSymmetry.py --cfg cfg/reduction.yaml --seed $seed --dynamics &
+#    python discreteSymmetry.py --cfg cfg/stochasticAugmentation.yaml --seed $seed --dynamics &
+#    wait
+#    echo "Script with seed $seed ended"
+#done
+
+#for seed in $(seq $start_seed $end_seed)
+#do
+#    echo "Running script with seed $seed"
+#    python discreteSymmetry.py --cfg cfg/noAugmentation_walker2d-med-expert.yaml --seed $seed --dynamics &
+#    python discreteSymmetry.py --cfg cfg/reduction_walker2d-med-expert.yaml --seed $seed --dynamics &
+#    wait
+#    echo "Script with seed $seed ended"
+#done
+
+#for seed in $(seq $start_seed $end_seed)
+#do
+#    echo "Running script with seed $seed"
+#    python discreteSymmetry.py --cfg cfg/noAugmentation_ant.yaml --seed $seed --dynamics &
+#    python discreteSymmetry.py --cfg cfg/reduction_ant.yaml --seed $seed --dynamics &
+#    python discreteSymmetry.py --cfg cfg/stochasticAugmentation_ant.yaml --seed $seed --dynamics &
+#    echo "Script with seed $seed ended"
+#done
+#wait
+
+
 
 #python discreteSymmetry.py --cfg cfg/reduction.yaml --dynamics --COMBO --combo_symmetry &
 #python discreteSymmetry.py --cfg cfg/reductionAugmentation.yaml --dynamics &
@@ -77,6 +98,15 @@ done
 
 #python discreteSymmetry.py --cfg cfg/reduction.yaml --COMBO --combo_symmetry &
 #python discreteSymmetry.py --cfg cfg/noAugmentation.yaml --COMBO &
+
+python discreteSymmetry.py --cfg cfg/reduction_ant.yaml --COMBO --combo_symmetry &
+python discreteSymmetry.py --cfg cfg/noAugmentation_ant.yaml --COMBO &
+
+
+#python discreteSymmetry.py --cfg cfg/reduction_walker2d-med-expert.yaml --COMBO --combo_symmetry &
+#python discreteSymmetry.py --cfg cfg/noAugmentation_walker2d-med-expert.yaml --COMBO --use_batch_norm &
+#python discreteSymmetry.py --cfg cfg/noAugmentation_walker2d-med-expert.yaml --COMBO --use_batch_norm --use_dropout &
+#python discreteSymmetry.py --cfg cfg/noAugmentation_walker2d-med-expert.yaml --COMBO &
 
 wait # Wait for all background processes to end
 

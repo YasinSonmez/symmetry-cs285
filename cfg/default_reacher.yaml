@@ -1,0 +1,3 @@
+env_name: "Reacher-v2"
+reduction: False
+file_path: 'd3rlpy_data/reacherv2_atan2_fixed.h5'

@@ -114,6 +114,7 @@ class ProbabilisticDynamicsModel(nn.Module):  # type: ignore
         self._permutation_indices = permutation_indices
         self._augmentation = augmentation
         self._reduction = reduction
+        self._transferred_to_device = False
 
         state_feature_size = state_encoder.get_feature_size() # TODO: do I need to enforce feature and observation size are common between the state and reward encoders?
         reward_feature_size = reward_encoder.get_feature_size()
@@ -210,15 +211,17 @@ class ProbabilisticDynamicsModel(nn.Module):  # type: ignore
         rewards: torch.Tensor,
         next_observations: torch.Tensor,
     ) -> torch.Tensor:
-        if self._P_s is not None:
+        # Only transfer once using boolean self._transferred_to_device
+        if self._P_s is not None and not self._transferred_to_device:
             device = observations.device
             for i in range(len(self._P_s)):
                 self._P_s[i] = self._P_s[i].to(device)
                 self._P_a[i] = self._P_a[i].to(device)
+            self._transferred_to_device = True
 
         if self._augmentation:
             symmetry_count = len(self._P_s)
-            if np.random.rand()<1/(1+symmetry_count):
+            if np.random.rand()>1/(1+symmetry_count):
                 i = np.random.randint(symmetry_count)
                 observations = observations@self._P_s[i].T
                 next_observations = next_observations@self._P_s[i].T
