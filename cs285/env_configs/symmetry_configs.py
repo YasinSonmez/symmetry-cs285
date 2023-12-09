@@ -3,6 +3,87 @@ from .mpc_config import mpc_config
 import numpy as np
 import gym
 from gym.envs.mujoco.reacher_v4 import ReacherEnv
+from gym.envs.mujoco.inverted_pendulum_v4 import InvertedPendulumEnv
+
+class InvertedPendulumWrapper(InvertedPendulumEnv):
+
+    goal_pos = 1.0
+
+    def step(self, action):
+        ob, _reward, _terminated, truncated, info = super().step(action)
+
+        reward, _ = self.get_reward(ob, action)
+
+        terminated = bool(not np.isfinite(ob).all() or (np.abs(ob[1]) > 0.79))
+
+        return ob, reward, terminated, truncated, info
+    
+    def get_reward(self, observations, actions):
+        if len(observations.shape) == 1:
+            observations = np.expand_dims(observations, axis=0)
+            actions = np.expand_dims(actions, axis=0)
+            batch_mode = False
+        else:
+            batch_mode = True
+
+        xs = observations[:, 0]
+        dists = xs - self.goal_pos
+
+        b = 2
+        c = 1.5
+        reward_pos = b/(np.power(c, dists) + np.power(c, -dists))
+
+        angs = observations[:, 1]
+        reward_upright = b/(np.power(c, angs) + np.power(c, -angs))
+
+        rewards = reward_pos + reward_upright
+
+        dones = np.zeros((observations.shape[0],))
+
+        if not batch_mode:
+            return rewards[0], dones[0]
+        return rewards, dones
+    
+def inverted_pendulum_symmetry(
+    env_name,
+    exp_name,
+    use_projector = False,
+    **kwargs
+):
+    print("Using inverted pendulum symmetry config")
+    config = mpc_config(env_name, exp_name, **kwargs)
+
+
+    def make_env(render: bool = False):
+        assert env_name == "InvertedPendulum-v4"
+        env = InvertedPendulumWrapper(render_mode="single_rgb_array" if render else None)
+        env = gym.wrappers.StepAPICompatibility(env, new_step_api=False)
+        return env
+
+    def projector(obs):
+        """Takes in a batch of obs and returns a batch of reduced observations."""
+        # Input size (batch_size, ob_dim)
+        # Output size (batch_size, reduced_size)
+        # Remove the position of the cart (state 0)
+        if obs.ndim == 2:
+            return obs[:, [1, 2, 3]]
+        elif obs.ndim == 1:
+            return obs[[1, 2, 3]]
+        else:
+            assert False
+
+    reduced_size = 3
+
+    config["make_env"] = make_env
+    config["ep_len"] = 200
+    if use_projector:
+        config["agent_kwargs"]["projector"] = projector
+        config["agent_kwargs"]["reduced_size"] = reduced_size
+    else:
+        config["agent_kwargs"]["projector"] = None
+        config["agent_kwargs"]["reduced_size"] = None 
+
+    return config
 
 class ReacherWrapper(ReacherEnv):
 
@@ -41,8 +122,8 @@ class ReacherWrapper(ReacherEnv):
         l1 = 0.1 
         l2 = 0.1
         fingertip_pos = np.hstack((
-            l1*np.cos(theta1) + l2*np.cos(theta1 + theta2),
-            l1*np.sin(theta1) + l2*np.sin(theta1 + theta2)
+            np.reshape(l1*np.cos(theta1) + l2*np.cos(theta1 + theta2), (-1, 1)),
+            np.reshape(l1*np.sin(theta1) + l2*np.sin(theta1 + theta2), (-1, 1))
         ))
 
         dists = fingertip_pos - target
@@ -91,6 +172,7 @@ def reacher_symmetry(
         )
         # TODO: make a reward function, transform the env to use it, and 
         # add a get_reward function to the env
+        new_env = gym.wrappers.StepAPICompatibility(new_env, new_step_api=False)
         return new_env
 
     def projector(obs):

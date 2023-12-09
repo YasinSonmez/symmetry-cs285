@@ -118,9 +118,9 @@ class ModelBasedAgent(nn.Module):
         else:
             red_obs = obs
         red_obs_acs = torch.hstack((red_obs, acs))
-        normalized_red_obs_acs = (red_obs_acs - self.red_obs_acs_mean) / (self.red_obs_acs_std + 1e-6)
+        normalized_red_obs_acs = (red_obs_acs - self.red_obs_acs_mean) / (self.red_obs_acs_std + 1e-9)
         inputs = self.dynamics_models[i](normalized_red_obs_acs)
-        normalized_deltas = (next_obs - obs - self.obs_delta_mean) / (self.obs_delta_std + 1e-6)
+        normalized_deltas = (next_obs - obs - self.obs_delta_mean) / (self.obs_delta_std + 1e-9)
         loss = self.loss_fn(inputs, normalized_deltas)
 
         # obs_acs = torch.hstack((obs, acs))
@@ -157,8 +157,8 @@ class ModelBasedAgent(nn.Module):
         obs_delta = next_obs - obs
         self.red_obs_acs_mean = red_obs_acs.mean(dim=0)
         self.red_obs_acs_std = red_obs_acs.std(dim=0)
-        self.obs_delta_mean = obs_delta.mean(dim=0)
-        self.obs_delta_std = obs_delta.std(dim=0)
+        self.obs_delta_mean = torch.zeros_like(obs_delta.mean(dim=0)) # obs_delta.mean(dim=0)
+        self.obs_delta_std = torch.ones_like(obs_delta.std(dim=0)) # obs_delta.std(dim=0)
 
         # obs_acs = torch.hstack((obs, acs))
         # obs_delta = next_obs - obs
@@ -191,7 +191,7 @@ class ModelBasedAgent(nn.Module):
         else:
             red_obs = obs
         red_obs_acs = torch.hstack((red_obs, acs))
-        normalized_red_obs_acs = (red_obs_acs - self.red_obs_acs_mean) / (self.red_obs_acs_std + 1e-6)
+        normalized_red_obs_acs = (red_obs_acs - self.red_obs_acs_mean) / (self.red_obs_acs_std + 1e-9)
         pred_normalized_delta = self.dynamics_models[i](normalized_red_obs_acs)
         pred_delta = pred_normalized_delta*self.obs_delta_std + self.obs_delta_mean
         pred_next_obs = obs + pred_delta
@@ -239,7 +239,12 @@ class ModelBasedAgent(nn.Module):
             # HINT: use self.get_dynamics_predictions
             next_obs = []
             for i in range(self.ensemble_size):
-                next_obs.append(self.get_dynamics_predictions(i, obs[i, :, :], acs))
+                this_next_obs = self.get_dynamics_predictions(i, obs[i, :, :], acs)
+                assert this_next_obs.shape == (
+                    self.mpc_num_action_sequences,
+                    self.ob_dim,
+                ), f"{this_next_obs.shape} != {self.mpc_num_action_sequences} x {self.ob_dim}"
+                next_obs.append(this_next_obs)
             next_obs = np.stack(next_obs)
             assert next_obs.shape == (
                 self.ensemble_size,
@@ -253,11 +258,23 @@ class ModelBasedAgent(nn.Module):
             # respectively, and returns a tuple of `(rewards, dones)`. You can 
             # ignore `dones`. You might want to do some reshaping to make
             # `next_obs` and `acs` 2-dimensional.
-            rewards = self.env.get_reward(
-                next_obs.reshape((-1, self.ob_dim)),
-                acs.reshape((-1, self.ac_dim))
-            )[0].reshape(self.ensemble_size, self.mpc_num_action_sequences)
-            assert rewards.shape == (self.ensemble_size, self.mpc_num_action_sequences)
+            rewards = []
+            for i in range(self.ensemble_size):
+                this_rewards = self.env.get_reward(
+                    next_obs[i, :, :].reshape((-1, self.ob_dim)),
+                    acs.reshape((-1, self.ac_dim)),
+                )[0]
+                assert this_rewards.shape == (self.mpc_num_action_sequences,), f"{this_rewards.shape} != ({self.mpc_num_action_sequences},)"
+                rewards.append(this_rewards)
+            rewards = np.stack(rewards)
+            # trans_acs = acs.reshape((-1, self.ac_dim))
+            # rewards = self.env.get_reward(
+            #     next_obs.reshape((acs.shape[0], -1)),
+            #     trans_acs
+            # )[0].reshape(self.ensemble_size, self.mpc_num_action_sequences)
+            assert rewards.shape == (self.ensemble_size, self.mpc_num_action_sequences), (
+                f"{rewards.shape} != {(self.ensemble_size, self.mpc_num_action_sequences)}"
+            )
 
             sum_of_rewards += rewards
 

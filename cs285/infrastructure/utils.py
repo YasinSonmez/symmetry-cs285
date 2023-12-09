@@ -28,6 +28,7 @@ def sample_trajectory(
     steps = 0
 
     while True:
+        # print(f"Step {steps}")
         # render an image
         if render:
             if hasattr(env, "sim"):
@@ -44,15 +45,16 @@ def sample_trajectory(
 
         ac = policy.get_action(ob)
 
-        next_ob, rew, terminated, trunc, info = env.step(ac)
-        done = terminated or trunc
+        # next_ob, rew, terminated, trunc, info = env.step(ac)
+        next_ob, rew, done, info = env.step(ac)
+        # done = terminated or trunc
 
         steps += 1
         # only record a "done" into the replay buffer if not truncated
-        # done_not_truncated = (
-        #     done and steps <= max_length and not info.get("TimeLimit.truncated", False)
-        # )
-        done_not_truncated = terminated
+        done_not_truncated = (
+            done and steps <= max_length and not info.get("TimeLimit.truncated", False)
+        )
+        # done_not_truncated = terminated
 
         # record result of taking that action
         obs.append(ob)
@@ -111,8 +113,11 @@ def sample_n_trajectories(
     trajs = []
     for i in range(ntraj):
         # collect rollout
+        print(f"Rollout {i}...")
+        # print(f"Max length: {max_length}")
         traj = sample_trajectory(env, policy, max_length, render)
         trajs.append(traj)
+        print(f"len {get_traj_length(traj)} of max {max_length}")
     return trajs
 
 

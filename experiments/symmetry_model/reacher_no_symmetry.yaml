@@ -4,7 +4,7 @@ exp_name: reacher_mbpo_no_symmetry
 base_config: reacher_symmetry
 num_layers: 2
 hidden_size: 128
-num_iters: 10
+num_iters: 100
 initial_batch_size: 5000
 batch_size: 5000
 num_agent_train_steps_per_iter: 1500
