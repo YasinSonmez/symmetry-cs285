@@ -89,8 +89,10 @@ def create_one_dim_tr_model(
 
     name_obs_process_fn = cfg.overrides.get("obs_process_fn", None)
     if name_obs_process_fn:
+        print(f"Using preprocess function: {name_obs_process_fn}")
         obs_process_fn = hydra.utils.get_method(cfg.overrides.obs_process_fn)
     else:
+        print("Not using any preprocess function")
         obs_process_fn = None
     dynamics_model = mbrl.models.OneDTransitionRewardModel(
         model,

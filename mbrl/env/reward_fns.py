@@ -51,3 +51,18 @@ def pusher(act: torch.Tensor, next_obs: torch.Tensor) -> torch.Tensor:
     act_cost = 0.1 * (act**2).sum(axis=1)
 
     return -(obs_cost + act_cost).view(-1, 1)
+
+## Custom -- Neelay
+
+def reward_asymmetric_inverted_pendulum(act: torch.Tensor, next_obs: torch.Tensor) -> torch.Tensor:
+    assert len(next_obs.shape) == len(act.shape) == 2
+
+    goal_pos = 1.0
+    x = next_obs[:, :1]
+    theta = next_obs[:, 1:2]
+
+    pos_reward = torch.exp(-((x-goal_pos)**2))
+    upright_reward = torch.exp(-(theta**2))
+    reward = pos_reward + upright_reward
+    
+    return reward.view(-1, 1)

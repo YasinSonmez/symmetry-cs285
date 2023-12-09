@@ -1,7 +1,8 @@
 # @package _group_
-env: "gym___InvertedPendulum-v4"
-term_fn: "inverted_pendulum"
-learned_rewards: false # true modified -- Neelay
+env: "custom___RewardAsymmetricInvertedPendulum"
+term_fn: "reward_asymmetric_inverted_pendulum"
+
+learned_rewards: false # Differs from pets_inv_pendulum.yaml
 trial_length: 1000
 num_steps: 20000
 

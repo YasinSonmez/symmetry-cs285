@@ -65,6 +65,17 @@ def _legacy_make_env(
     elif "gym___" in cfg.overrides.env:
         env = gym.make(cfg.overrides.env.split("___")[1])
         term_fn, reward_fn = _get_term_and_reward_fn(cfg)
+    elif "custom___" in cfg.overrides.env: # Neelay
+        import mbrl.env
+        if cfg.overrides.env == "custom___RewardAsymmetricInvertedPendulum":
+            env = mbrl.env.reward_asymmetric_inverted_pendulum.RewardAsymmetricInvertedPendulumEnv()
+            term_fn = mbrl.env.termination_fns.reward_asymmetric_inverted_pendulum
+            reward_fn = mbrl.env.reward_fns.reward_asymmetric_inverted_pendulum
+            env = gym.wrappers.TimeLimit(
+                env, max_episode_steps=cfg.overrides.get("trial_length", 200)
+            )
+        else:
+            raise ValueError(f"Invalid environment string: {cfg.overrides.env}.")
     else:
         import mbrl.env.mujoco_envs
 
@@ -97,7 +108,7 @@ def _legacy_make_env(
             term_fn = mbrl.env.termination_fns.humanoid
             reward_fn = None
         else:
-            raise ValueError("Invalid environment string.")
+            raise ValueError(f"Invalid environment string: {cfg.overrides.env}.")
         env = gym.wrappers.TimeLimit(
             env, max_episode_steps=cfg.overrides.get("trial_length", 1000)
         )
