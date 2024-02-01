@@ -1,0 +1,18 @@
+
+torch==1.7.1 # Added by Neelay
+PyQt5 # Used for visualization. Added by Neelay
+mujoco<=2.3.3 # Added by Neelay
+glfw # Added by Neelay
+cython<3 # Added by Neelay
+omegaconf>=2.0,<2.1
+hydra-core==1.0.3
+termcolor>=1.1.0
+tensorboard>=2.4.0
+imageio>=2.9.0
+numpy>=1.19.1
+matplotlib>=3.3.1
+gymnasium==0.26.3
+jupyter>=1.0.0
+pytest>=6.0.1
+sk-video>=1.1.10
+tqdm>=4.48.2
