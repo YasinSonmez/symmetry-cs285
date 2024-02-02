@@ -5,7 +5,7 @@ term_fn: "no_termination"
 
 learned_rewards: false
 
-num_steps: 40000
+num_steps: 80000
 epoch_length: 250
 num_elites: 5
 patience: 5

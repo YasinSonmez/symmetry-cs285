@@ -1,6 +1,6 @@
 #!/bin/bash
 # Job name:
-#SBATCH --job-name=mbpo-reacher-seed2
+#SBATCH --job-name=mbpo-car-seed0
 #
 # Account:
 #SBATCH --account=fc_control
@@ -32,8 +32,11 @@ module load python
 source activate mbrl2
 python --version
 
-python -m mbrl.examples.main algorithm=mbpo seed=2 overrides=custom_mbpo_reacher_no_symm experiment=no_symmetry &
-python -m mbrl.examples.main algorithm=mbpo seed=2 overrides=custom_mbpo_reacher_symm experiment=symmetry dynamics_model.in_size=5 &
+python -m mbrl.examples.main algorithm=mbpo seed=0 overrides=custom_mbpo_car_symm experiment=symmetry dynamics_model.in_size=7 &
+python -m mbrl.examples.main algorithm=mbpo seed=0 overrides=custom_mbpo_car_no_symm &
+
+# python -m mbrl.examples.main algorithm=mbpo seed=2 overrides=custom_mbpo_reacher_no_symm experiment=no_symmetry &
+# python -m mbrl.examples.main algorithm=mbpo seed=2 overrides=custom_mbpo_reacher_symm experiment=symmetry dynamics_model.in_size=5 &
 
 # python -m mbrl.examples.main algorithm=mbpo seed=2 overrides=custom_mbpo_rwd_asymm_inv_pend_no_symm experiment=no_symmetry &
 # python -m mbrl.examples.main algorithm=mbpo seed=2 overrides=custom_mbpo_rwd_asymm_inv_pend_symm experiment=symmetry dynamics_model.in_size=4 &

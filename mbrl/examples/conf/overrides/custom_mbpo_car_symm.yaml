@@ -7,7 +7,7 @@ obs_process_fn: "mbrl.env.car.CarEnv.preprocess_fn"
 
 learned_rewards: false
 
-num_steps: 40000
+num_steps: 80000
 epoch_length: 250
 num_elites: 5
 patience: 5
