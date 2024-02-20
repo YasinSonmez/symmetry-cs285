@@ -1,0 +1,107 @@
+{
+  "action_scaler": null,
+  "augmentation": true,
+  "batch_size": 100,
+  "discrete_action": false,
+  "gamma": 1.0,
+  "generated_maxlen": 100000,
+  "learning_rate": 0.0003,
+  "n_ensembles": 3,
+  "n_frames": 1,
+  "n_steps": 1,
+  "optim_factory": {
+    "optim_cls": "Adam",
+    "betas": [
+      0.9,
+      0.999
+    ],
+    "eps": 1e-08,
+    "weight_decay": 0.0001,
+    "amsgrad": false
+  },
+  "permutation_indices": [
+    [
+      [
+        5,
+        6,
+        19,
+        20
+      ],
+      [
+        7,
+        8,
+        21,
+        22
+      ],
+      [
+        9,
+        10,
+        23,
+        24
+      ],
+      [
+        11,
+        12,
+        25,
+        26
+      ]
+    ],
+    [
+      [
+        0,
+        1
+      ],
+      [
+        2,
+        3
+      ],
+      [
+        4,
+        5
+      ],
+      [
+        6,
+        7
+      ]
+    ]
+  ],
+  "real_ratio": 1.0,
+  "reduction": false,
+  "reward_encoder_factory": {
+    "type": "vector",
+    "params": {
+      "hidden_units": [
+        256,
+        256
+      ],
+      "activation": "relu",
+      "use_batch_norm": false,
+      "dropout_rate": 0.2,
+      "use_dense": false
+    }
+  },
+  "reward_scaler": null,
+  "scaler": null,
+  "state_encoder_factory": {
+    "type": "vector",
+    "params": {
+      "hidden_units": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "activation": "relu",
+      "use_batch_norm": false,
+      "dropout_rate": 0.2,
+      "use_dense": false
+    }
+  },
+  "use_gpu": 0,
+  "variance_type": "max",
+  "algorithm": "ProbabilisticEnsembleDynamics",
+  "observation_shape": [
+    27
+  ],
+  "action_size": 8
+}
