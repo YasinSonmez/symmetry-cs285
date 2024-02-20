@@ -6,3 +6,6 @@ pandas
 matplotlib
 torch>=2.0.0,!=2.0.1,!=2.1.0
 gym==0.23.1
+highway-env
+stable_baselines3
+pprint
