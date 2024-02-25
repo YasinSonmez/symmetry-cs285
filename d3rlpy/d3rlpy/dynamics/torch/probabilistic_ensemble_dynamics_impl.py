@@ -6,7 +6,7 @@ from torch.optim import Optimizer
 
 from ...gpu import Device
 from ...models.builders import create_probabilistic_ensemble_dynamics_model
-from ...models.encoders import EncoderFactory
+from ...models.encoders import EncoderFactory, VectorEncoderFactory
 from ...models.optimizers import OptimizerFactory
 from ...models.torch import ProbabilisticEnsembleDynamicsModel
 from ...preprocessing import ActionScaler, RewardScaler, Scaler
@@ -44,6 +44,15 @@ class ProbabilisticEnsembleDynamicsImpl(TorchImplBase):
         permutation_indices=None,
         augmentation=None,
         reduction=None,
+        # Cartan's Moving Frame method stuff (Neelay)
+        cartans_deterministic=False,
+        cartans_stochastic=False,
+        cartans_rho=None,
+        cartans_phi=None,
+        cartans_psi=None,
+        cartans_R=None,
+        cartans_submanifold_dim=None,
+        cartans_encoder_factory=VectorEncoderFactory(),
     ):
         super().__init__(
             observation_shape=observation_shape,
@@ -63,6 +72,26 @@ class ProbabilisticEnsembleDynamicsImpl(TorchImplBase):
         self._permutation_indices=permutation_indices
         self._augmentation=augmentation
         self._reduction=reduction
+
+        # Cartan's moving frame method stuff (Neelay)
+        assert not (cartans_deterministic and cartans_stochastic)
+        self.cartans_deterministic = cartans_deterministic
+        self.cartans_stochastic = cartans_stochastic
+        self.cartans_rho = cartans_rho
+        self.cartans_phi = cartans_phi
+        self.cartans_psi = cartans_psi
+        self.cartans_R = cartans_R
+        self.cartans_submanifold_dim = cartans_submanifold_dim
+        self.cartans_encoder_factory = cartans_encoder_factory
+        if self.cartans_deterministic:
+            assert self.cartans_rho is not None
+            assert self.cartans_phi is not None
+            assert self.cartans_psi is not None
+            assert self.cartans_submanifold_dim is not None
+        if self.cartans_stochastic:
+            assert self.cartans_rho is not None
+            assert self.cartans_psi is not None
+            assert self.cartans_submanifold_dim is not None
 
         # initialized in build
         self._dynamics = None
@@ -87,7 +116,16 @@ class ProbabilisticEnsembleDynamicsImpl(TorchImplBase):
             discrete_action=self._discrete_action,
             permutation_indices = self._permutation_indices,
             augmentation = self._augmentation,
-            reduction=self._reduction
+            reduction=self._reduction,
+            # Cartan's Moving Frame method stuff (Neelay)
+            cartans_deterministic=self.cartans_deterministic,
+            cartans_stochastic=self.cartans_stochastic,
+            cartans_rho=self.cartans_rho,
+            cartans_phi=self.cartans_phi,
+            cartans_psi=self.cartans_psi,
+            cartans_R=self.cartans_R,
+            cartans_submanifold_dim=self.cartans_submanifold_dim,
+            cartans_encoder_factory=self.cartans_encoder_factory,
         )
 
     def _build_optim(self) -> None:

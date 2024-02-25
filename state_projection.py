@@ -9,7 +9,7 @@ print(gym.version.VERSION)
 N_POLICY_STEPS = 50000 # 100000
 N_EPOCHS = 30
 N_RUNS = 3
-EXPERIMENT_NAME = "exp_1_RwdAssymInvPend_MOPO"
+EXPERIMENT_NAME = "exp_TEST_RwdAssymInvPend_MOPO"
 
 seed0 = 1
 use_gpu = True

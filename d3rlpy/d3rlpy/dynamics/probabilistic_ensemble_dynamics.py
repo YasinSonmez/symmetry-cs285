@@ -12,7 +12,7 @@ from ..argument_utility import (
 from ..constants import IMPL_NOT_INITIALIZED_ERROR, ActionSpace
 from ..dataset import TransitionMiniBatch
 from ..gpu import Device
-from ..models.encoders import EncoderFactory
+from ..models.encoders import EncoderFactory, VectorEncoderFactory
 from ..models.optimizers import AdamFactory, OptimizerFactory
 from .base import DynamicsBase
 from .torch.probabilistic_ensemble_dynamics_impl import (
@@ -96,6 +96,16 @@ class ProbabilisticEnsembleDynamics(DynamicsBase):
         permutation_indices=None,
         augmentation=None,
         reduction=None,
+        # Added by Neelay for Cartan's moving frame method
+        cartans_deterministic=False, # Set to True to use Cartan's Moving Frame method with deterministic dynamics. Assumes rho, phi, and psi are set.
+        cartans_stochastic=False, # Set to True to use Cartan's Moving Frame method with stochastic dynamics. Assumes rho, R, and psi are set (implicitly assumes phi is an affine function of x).
+        cartans_rho=None, # rho: X -> X^b, where X is the state space and X^b is submanifold. Projects state into submanifold.
+        cartans_phi=None, # phi: G x X -> X, where X is the state space.
+        cartans_psi=None, # psi: G x U -> U, where G is the Lie group and U is the action space.
+        cartans_R=None,   # R: G -> R^(nxn), where G is the Lie group and R^(nxn) is an invertible matrix to transform the state space.
+        cartans_submanifold_dim=None, # Dimension of X^b
+        cartans_encoder_factory=VectorEncoderFactory(), # Just a standard type of encoder factory (no symmetry in here)
+        # End Cartan's moving frame method variables
         impl: Optional[ProbabilisticEnsembleDynamicsImpl] = None,
         **kwargs: Any
     ):
@@ -120,6 +130,27 @@ class ProbabilisticEnsembleDynamics(DynamicsBase):
         self._augmentation=augmentation
         self._reduction=reduction
 
+        # Cartan's moving frame method stuff (Neelay)
+        assert not (cartans_deterministic and cartans_stochastic)
+        self.cartans_deterministic = cartans_deterministic
+        self.cartans_stochastic = cartans_stochastic
+        self.cartans_rho = cartans_rho
+        self.cartans_phi = cartans_phi
+        self.cartans_psi = cartans_psi
+        self.cartans_R = cartans_R
+        self.cartans_submanifold_dim = cartans_submanifold_dim
+        self.cartans_encoder_factory = cartans_encoder_factory
+        if self.cartans_deterministic:
+            assert self.cartans_rho is not None
+            assert self.cartans_phi is not None
+            assert self.cartans_psi is not None
+            assert self.cartans_submanifold_dim is not None
+        if self.cartans_stochastic:
+            assert self.cartans_rho is not None
+            assert self.cartans_psi is not None
+            assert self.cartans_submanifold_dim is not None
+            
+
     def _create_impl(
         self, observation_shape: Sequence[int], action_size: int
     ) -> None:
@@ -140,6 +171,15 @@ class ProbabilisticEnsembleDynamics(DynamicsBase):
             permutation_indices=self._permutation_indices,
             augmentation=self._augmentation,
             reduction=self._reduction,
+            # Cartan's Moving Frame method stuff (Neelay)
+            cartans_deterministic=self.cartans_deterministic,
+            cartans_stochastic=self.cartans_stochastic,
+            cartans_rho=self.cartans_rho,
+            cartans_phi=self.cartans_phi,
+            cartans_psi=self.cartans_psi,
+            cartans_R=self.cartans_R,
+            cartans_submanifold_dim=self.cartans_submanifold_dim,
+            cartans_encoder_factory=self.cartans_encoder_factory,
         )
         self._impl.build()
 

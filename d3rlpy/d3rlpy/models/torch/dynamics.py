@@ -5,12 +5,13 @@ from typing import List, Optional, Tuple, cast
 import torch
 import torch.nn.functional as F
 from torch import nn
-from torch.distributions import Normal
+from torch.distributions import Normal, MultivariateNormal
 from torch.nn.utils import spectral_norm
 
 from .encoders import EncoderWithAction
 import numpy as np
 from itertools import combinations
+
 
 def _compute_ensemble_variance(
     observations: torch.Tensor,
@@ -66,6 +67,7 @@ def create_permutation_matrix(size, source_indices, target_indices):
     perm_matrix.requires_grad = False
     return perm_matrix
 
+
 def create_pairwise_permutation_matrices(size, perm_indices, pairs):
     """
     Create a permutation matrix of given size that permutes rows from source_indices to target_indices.
@@ -74,12 +76,17 @@ def create_pairwise_permutation_matrices(size, perm_indices, pairs):
     :param perm_indices: List of List of indices to be permuted
     :return: Permutation matrix of size 'size x size'
     """
-    
+
     perm_matrices = []
     for pair in pairs:
-        perm_matrices.append(create_permutation_matrix(size, perm_indices[pair[0]], perm_indices[pair[1]]))
-        
+        perm_matrices.append(
+            create_permutation_matrix(
+                size, perm_indices[pair[0]], perm_indices[pair[1]]
+            )
+        )
+
     return perm_matrices
+
 
 class ProbabilisticDynamicsModel(nn.Module):  # type: ignore
     """Probabilistic dynamics model.
@@ -99,12 +106,23 @@ class ProbabilisticDynamicsModel(nn.Module):  # type: ignore
     _max_logstd: nn.Parameter
     _min_logstd: nn.Parameter
 
-    def __init__(self, state_encoder: EncoderWithAction, 
-                reward_encoder: EncoderWithAction,
-                permutation_indices = None,
-                augmentation = None,
-                reduction = None,
-                ):
+    def __init__(
+        self,
+        state_encoder: EncoderWithAction,
+        reward_encoder: EncoderWithAction,
+        permutation_indices=None,
+        augmentation=None,
+        reduction=None,
+        # Cartan's Moving Frame method stuff (Neelay)
+        cartans_deterministic=False,
+        cartans_stochastic=False,
+        cartans_rho=None,
+        cartans_phi=None,
+        cartans_psi=None,
+        cartans_R=None,
+        cartans_full_state_encoder:Optional[EncoderWithAction]=None,
+        cartans_reduced_state_encoder:Optional[EncoderWithAction]=None,
+    ):
         super().__init__()
         # apply spectral normalization except logstd encoder.
         _apply_spectral_norm_recursively(cast(nn.Module, state_encoder))
@@ -116,24 +134,71 @@ class ProbabilisticDynamicsModel(nn.Module):  # type: ignore
         self._reduction = reduction
         self._transferred_to_device = False
 
-        state_feature_size = state_encoder.get_feature_size() # TODO: do I need to enforce feature and observation size are common between the state and reward encoders?
+        # Cartan's moving frame method stuff (Neelay)
+        assert not (cartans_deterministic and cartans_stochastic)
+        self.cartans_deterministic = cartans_deterministic
+        self.cartans_stochastic = cartans_stochastic
+        if self.cartans_deterministic:
+            assert self.cartans_rho is not None
+            assert self.cartans_phi is not None
+            assert self.cartans_psi is not None
+            assert cartans_full_state_encoder is not None
+            assert cartans_reduced_state_encoder is not None
+            self.cartans_rho = cartans_rho
+            self.cartans_phi = cartans_phi
+            self.cartans_psi = cartans_psi
+            self.cartans_full_state_encoder = cartans_full_state_encoder
+            self.cartans_reduced_state_encoder = cartans_reduced_state_encoder
+        if self.cartans_stochastic:
+            assert self.cartans_rho is not None
+            assert self.cartans_psi is not None
+            assert cartans_full_state_encoder is not None
+            assert cartans_reduced_state_encoder is not None
+            self.cartans_rho = cartans_rho
+            self.cartans_psi = cartans_psi
+            self.cartans_R = cartans_R
+            self.cartans_full_state_encoder = cartans_full_state_encoder
+            self.cartans_reduced_state_encoder = cartans_reduced_state_encoder
+
+        state_mu_feature_size = state_encoder.get_feature_size()  # TODO: do I need to enforce feature and observation size are common between the state and reward encoders?
+        state_logstd_feature_size = state_mu_feature_size
         reward_feature_size = reward_encoder.get_feature_size()
         observation_size = state_encoder.observation_shape[0]
         action_size = state_encoder.action_size
+
+        if self.cartans_deterministic or self.cartans_stochastic:
+            state_mu_feature_size = self.cartans_reduced_state_encoder.get_feature_size()
+            reward_feature_size = self.cartans_full_state_encoder.get_feature_size()
+            observation_size = self.cartans_full_state_encoder.observation_shape[0]
+            action_size = self.cartans_full_state_encoder.action_size
+        if self.cartans_deterministic:
+            state_logstd_feature_size = self.cartans_full_state_encoder.get_feature_size()
+        if self.cartans_stochastic:
+            state_logstd_feature_size = self.cartans_reduced_state_encoder.get_feature_size()
+
+
         if permutation_indices is not None:
             m = len(self._permutation_indices)
             pairs = np.array(list(combinations(list(range(m)), 2)))
-            self._P_s = create_pairwise_permutation_matrices(observation_size, self._permutation_indices[0], pairs)
-            self._P_a = create_pairwise_permutation_matrices(action_size, self._permutation_indices[1], pairs)
+            self._P_s = create_pairwise_permutation_matrices(
+                observation_size, self._permutation_indices[0], pairs
+            )
+            self._P_a = create_pairwise_permutation_matrices(
+                action_size, self._permutation_indices[1], pairs
+            )
         else:
             self._P_s = None
             self._P_a = None
         # out_size = observation_size + 1
         out_size = observation_size
 
+
         # TODO: handle image observation
-        self._state_mu = spectral_norm(nn.Linear(state_feature_size, out_size))
-        self._state_logstd = nn.Linear(state_feature_size, out_size)
+        self._state_mu = spectral_norm(nn.Linear(state_mu_feature_size, out_size))
+        # If doing cartans_stochastic, this actually outputs the square root of a diagonal covariance matrix for the transformed space.
+        # This will then be transformed into the square root of a covariance matrix, L such that Sigma = L L^T.
+        # If not using cartans_stochastic, outputs the log of the square root of a diagonal covariance matrix.
+        self._state_logstd = nn.Linear(state_logstd_feature_size, out_size)
 
         self._reward_mu = spectral_norm(nn.Linear(reward_feature_size, 1))
         self._reward_logstd = nn.Linear(reward_feature_size, 1)
@@ -152,20 +217,55 @@ class ProbabilisticDynamicsModel(nn.Module):  # type: ignore
     def compute_stats(
         self, x: torch.Tensor, action: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        state_h = self._state_encoder(x, action)
-        reward_h = self._reward_encoder(x, action)
+        
+        if not (self.cartans_deterministic or self.cartans_stochastic):
+            state_mu_h = self._state_encoder(x, action)
+            state_logstd_h = state_mu_h
+            reward_h = self._reward_encoder(x, action)
+        else:
+            gammax = self.cartans_gamma(x) # TODO(Neelay): define
+            xbar = self.cartans_rho(x, gammax=gammax)
+            actionbar = self.cartans_psi(gammax, x)
+            reduced_h = self.cartans_reduced_state_encoder(xbar, actionbar)
+            full_h = self.cartans_full_state_encoder(x, action)
+            state_mu_h = reduced_h
+            if self.cartans_deterministic:
+                state_logstd_h = full_h
+            if self.cartans_stochastic:
+                state_logstd_h = reduced_h
+            reward_h = full_h
 
-        state_mu = self._state_mu(state_h)
+            gammaxinv = None # TODO(Neelay): define
+
+        state_mu = self._state_mu(state_mu_h)
+        if self.cartans_deterministic:
+            state_mu = state_mu + self.cartans_phi(gammax, x)
+            state_mu = self.cartans_phi(gammaxinv, state_mu)
+            state_mu = state_mu - x
+        if self.cartans_stochastic:
+            Rgammaxinv = self.cartans_R(gammaxinv)
+            state_mu = Rgammaxinv @ state_mu
         reward_mu = self._reward_mu(reward_h)
 
         # log standard deviation with bounds
-        state_logstd = self._state_logstd(state_h)
-        state_logstd = self._state_max_logstd - F.softplus(self._state_max_logstd - state_logstd)
-        state_logstd = self._state_min_logstd + F.softplus(state_logstd - self._state_min_logstd)
+        state_logstd = self._state_logstd(state_logstd_h)
+        state_logstd = self._state_max_logstd - F.softplus(
+            self._state_max_logstd - state_logstd
+        )
+        state_logstd = self._state_min_logstd + F.softplus(
+            state_logstd - self._state_min_logstd
+        )
+        if self.cartans_stochastic:
+            # This is L in var(DeltaF(x,u)) = LL^T, assuming state_logstd is Lbar such that var(DeltaFbar(xbar, ubar)) = Lbar Lbar^T
+            state_logstd = torch.mm(Rgammaxinv, state_logstd.diag())
 
         reward_logstd = self._reward_logstd(reward_h)
-        reward_logstd = self._reward_max_logstd - F.softplus(self._reward_max_logstd - reward_logstd)
-        reward_logstd = self._reward_min_logstd + F.softplus(reward_logstd - self._reward_min_logstd)
+        reward_logstd = self._reward_max_logstd - F.softplus(
+            self._reward_max_logstd - reward_logstd
+        )
+        reward_logstd = self._reward_min_logstd + F.softplus(
+            reward_logstd - self._reward_min_logstd
+        )
 
         # return mu, logstd
         return state_mu, reward_mu, state_logstd, reward_logstd
@@ -183,18 +283,23 @@ class ProbabilisticDynamicsModel(nn.Module):  # type: ignore
         if self._reduction:
             state_mus = [state_mu]
             state_logstds = [state_logstd]
-            for (P_s, P_a) in zip(self._P_s, self._P_a):
+            for P_s, P_a in zip(self._P_s, self._P_a):
                 # transform before input
-                state_mu2, _, state_logstd2, _ = self.compute_stats(x@P_s.T, action@P_a.T)
+                state_mu2, _, state_logstd2, _ = self.compute_stats(
+                    x @ P_s.T, action @ P_a.T
+                )
                 # reverse transform after input
-                state_mu2 = state_mu2@P_s.T
-                state_logstd2 = state_logstd2@P_s.T
+                state_mu2 = state_mu2 @ P_s.T
+                state_logstd2 = state_logstd2 @ P_s.T
                 state_mus.append(state_mu2)
                 state_logstds.append(state_logstd2)
                 state_mu = torch.stack(state_mus).mean(axis=0)
                 state_logstd = torch.stack(state_logstds).mean(axis=0)
 
-        state_dist = Normal(state_mu, state_logstd.exp())
+        if self.cartans_stochastic:
+            state_dist = MultivariateNormal(state_mu, scale_tril=state_logstd)
+        else:
+            state_dist = Normal(state_mu, state_logstd.exp())
         state_pred = state_dist.rsample()
 
         reward_dist = Normal(reward_mu, reward_logstd.exp())
@@ -202,7 +307,12 @@ class ProbabilisticDynamicsModel(nn.Module):  # type: ignore
         # residual prediction
         next_x = x + state_pred
         next_reward = reward_pred.view(-1, 1)
-        return next_x, next_reward, state_dist.variance.sum(dim=1, keepdims=True) + reward_dist.variance.sum(dim=1, keepdims=True)
+        return (
+            next_x,
+            next_reward,
+            state_dist.variance.sum(dim=1, keepdims=True)
+            + reward_dist.variance.sum(dim=1, keepdims=True),
+        )
 
     def compute_error(
         self,
@@ -221,23 +331,27 @@ class ProbabilisticDynamicsModel(nn.Module):  # type: ignore
 
         if self._augmentation:
             symmetry_count = len(self._P_s)
-            if np.random.rand()>1/(1+symmetry_count):
+            if np.random.rand() > 1 / (1 + symmetry_count):
                 i = np.random.randint(symmetry_count)
-                observations = observations@self._P_s[i].T
-                next_observations = next_observations@self._P_s[i].T
-                actions = actions@self._P_a[i].T
+                observations = observations @ self._P_s[i].T
+                next_observations = next_observations @ self._P_s[i].T
+                actions = actions @ self._P_a[i].T
 
         # mu, logstd = self.compute_stats(x, action)
-        state_mu, reward_mu, state_logstd, reward_logstd = self.compute_stats(observations, actions)            
+        state_mu, reward_mu, state_logstd, reward_logstd = self.compute_stats(
+            observations, actions
+        )
         if self._reduction:
             state_mus = [state_mu]
             state_logstds = [state_logstd]
-            for (P_s, P_a) in zip(self._P_s, self._P_a):
+            for P_s, P_a in zip(self._P_s, self._P_a):
                 # transform before input
-                state_mu2, _, state_logstd2, _ = self.compute_stats(observations@P_s.T, actions@P_a.T)
+                state_mu2, _, state_logstd2, _ = self.compute_stats(
+                    observations @ P_s.T, actions @ P_a.T
+                )
                 # reverse transform after input
-                state_mu2 = state_mu2@P_s.T
-                state_logstd2 = state_logstd2@P_s.T
+                state_mu2 = state_mu2 @ P_s.T
+                state_logstd2 = state_logstd2 @ P_s.T
                 state_mus.append(state_mu2)
                 state_logstds.append(state_logstd2)
                 state_mu = torch.stack(state_mus).mean(axis=0)
@@ -249,18 +363,21 @@ class ProbabilisticDynamicsModel(nn.Module):  # type: ignore
         logstd_reward = reward_logstd.view(-1, 1)
 
         # gaussian likelihood loss
-        likelihood_loss = _gaussian_likelihood(
-            next_observations, mu_x, logstd_x
-        )
-        likelihood_loss += _gaussian_likelihood(
-            rewards, mu_reward, logstd_reward
-        )
+        likelihood_loss = _gaussian_likelihood(next_observations, mu_x, logstd_x)
+        likelihood_loss += _gaussian_likelihood(rewards, mu_reward, logstd_reward)
 
         # penalty to minimize standard deviation
-        penalty = state_logstd.sum(dim=1, keepdim=True) + reward_logstd.sum(dim=1, keepdim=True)
+        penalty = state_logstd.sum(dim=1, keepdim=True) + reward_logstd.sum(
+            dim=1, keepdim=True
+        )
 
         # minimize logstd bounds
-        bound_loss = self._state_max_logstd.sum() - self._state_min_logstd.sum() + self._reward_max_logstd.sum() - self._reward_min_logstd.sum()
+        bound_loss = (
+            self._state_max_logstd.sum()
+            - self._state_min_logstd.sum()
+            + self._reward_max_logstd.sum()
+            - self._reward_min_logstd.sum()
+        )
 
         loss = likelihood_loss + penalty + 1e-2 * bound_loss
 
@@ -365,9 +482,7 @@ class ProbabilisticEnsembleDynamicsModel(nn.Module):  # type: ignore
         next_observations: torch.Tensor,
         masks: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        loss_sum = torch.tensor(
-            0.0, dtype=torch.float32, device=observations.device
-        )
+        loss_sum = torch.tensor(0.0, dtype=torch.float32, device=observations.device)
         for i, model in enumerate(self._models):
             loss = model.compute_error(
                 observations, actions, rewards, next_observations
@@ -376,9 +491,7 @@ class ProbabilisticEnsembleDynamicsModel(nn.Module):  # type: ignore
 
             # create mask if necessary
             if masks is None:
-                mask = torch.randint(
-                    0, 2, size=loss.shape, device=observations.device
-                )
+                mask = torch.randint(0, 2, size=loss.shape, device=observations.device)
             else:
                 mask = masks[i]
 

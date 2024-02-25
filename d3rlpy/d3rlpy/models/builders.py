@@ -1,4 +1,4 @@
-from typing import Sequence, cast
+from typing import Optional, Sequence, cast
 
 import torch
 from torch import nn
@@ -22,6 +22,8 @@ from .torch import (
     SquashedNormalPolicy,
     ValueFunction,
 )
+
+from .encoders import VectorEncoderFactory
 
 
 def create_discrete_q_function(
@@ -207,6 +209,15 @@ def create_probabilistic_ensemble_dynamics_model(
     permutation_indices = None,
     augmentation = None,
     reduction = None,
+    # Cartan's Moving Frame method stuff (Neelay)
+    cartans_deterministic=False,
+    cartans_stochastic=False,
+    cartans_rho=None,
+    cartans_phi=None,
+    cartans_psi=None,
+    cartans_R=None,
+    cartans_submanifold_dim:Optional[int]=None,
+    cartans_encoder_factory=VectorEncoderFactory(),
 ) -> ProbabilisticEnsembleDynamicsModel:
     models = []
     for _ in range(n_ensembles):
@@ -220,11 +231,33 @@ def create_probabilistic_ensemble_dynamics_model(
             action_size=action_size,
             discrete_action=discrete_action,
         )
-        model = ProbabilisticDynamicsModel(state_encoder, 
+
+        full_state_encoder = cartans_encoder_factory.create_with_action(
+            observation_shape=observation_shape,
+            action_size=action_size,
+            discrete_action=discrete_action,
+        )
+        reduced_state_encoder = cartans_encoder_factory.create_with_action(
+            observation_shape=cartans_submanifold_dim,
+            action_size=action_size,
+            discrete_action=discrete_action,
+        )
+        model = ProbabilisticDynamicsModel(
+            state_encoder, 
             reward_encoder,
             permutation_indices = permutation_indices,
             augmentation = augmentation,
-            reduction = reduction,)
+            reduction = reduction,
+            # Cartan's Moving Frame method stuff (Neelay)
+            cartans_deterministic=cartans_deterministic,
+            cartans_stochastic=cartans_stochastic,
+            cartans_rho=cartans_rho,
+            cartans_phi=cartans_phi,
+            cartans_psi=cartans_psi,
+            cartans_R=cartans_R,
+            cartans_full_state_encoder=full_state_encoder,
+            cartans_reduced_state_encoder=reduced_state_encoder,
+        )
         models.append(model)
     return ProbabilisticEnsembleDynamicsModel(models)
 
