@@ -1,22 +1,27 @@
-import d3rlpy
-from d3rlpy.algos import COMBO
-from sklearn.model_selection import train_test_split
-#import gymnasium as gym
-import gym
-from gym.wrappers import TransformObservation, TimeLimit
-import numpy as np
-import encoders
-import os
 import json
+import os
+
+# import gymnasium as gym
+import gym
+import numpy as np
+from gym.wrappers import TimeLimit, TransformObservation
+from sklearn.model_selection import train_test_split
+
+import d3rlpy
+import encoders
 import environments
+from d3rlpy.algos import COMBO
+
 print(gym.version.VERSION)
 
-seed = 1
+seed = 0
 d3rlpy.seed(seed)
 use_gpu = True
 
-env = TimeLimit(environments.RewardAssymetricInvertedPendulum(), max_episode_steps=1000)
-eval_env = TimeLimit(environments.RewardAssymetricInvertedPendulum(), max_episode_steps=1000)
+env = TimeLimit(environments.RewardAssymetricInvertedPendulum(), max_episode_steps=300)
+eval_env = TimeLimit(
+    environments.RewardAssymetricInvertedPendulum(), max_episode_steps=300
+)
 
 env.reset(seed=seed)
 eval_env.reset(seed=seed)
@@ -29,11 +34,11 @@ sac = d3rlpy.algos.SAC(
     actor_learning_rate=1e-3,
     critic_learning_rate=1e-3,
     temp_learning_rate=1e-3,
-    use_gpu=use_gpu
+    use_gpu=use_gpu,
 )
 
 # prepare utilities
-buffer = d3rlpy.online.buffers.ReplayBuffer(maxlen=100000, env=env)
+buffer = d3rlpy.online.buffers.ReplayBuffer(maxlen=10000, env=env)
 
 # start training
 sac.fit_online(
@@ -44,12 +49,12 @@ sac.fit_online(
     n_steps_per_epoch=1000,
     update_interval=2,
     update_start_step=1000,
-    tensorboard_dir='tensorboard_logs',
-    experiment_name='test7'
+    tensorboard_dir="tensorboard_logs",
+    experiment_name="test7",
 )
 
 dataset = buffer.to_mdp_dataset()
-dataset.dump('d3rlpy_data/rwd_assym_inv_pend_v7.h5')
+dataset.dump("d3rlpy_data/TEST.h5")
 
 scorer = d3rlpy.metrics.scorer.evaluate_on_environment(eval_env, render=True)
 mean_episode_return = scorer(sac)

@@ -103,6 +103,8 @@ class ProbabilisticEnsembleDynamics(DynamicsBase):
         cartans_phi=None, # phi: G x X -> X, where X is the state space.
         cartans_psi=None, # psi: G x U -> U, where G is the Lie group and U is the action space.
         cartans_R=None,   # R: G -> R^(nxn), where G is the Lie group and R^(nxn) is an invertible matrix to transform the state space.
+        cartans_gamma=None, # gamma: X -> G.
+        cartans_group_inv=None, # alpha in G -> alpha^-1.
         cartans_submanifold_dim=None, # Dimension of X^b
         cartans_encoder_factory=VectorEncoderFactory(), # Just a standard type of encoder factory (no symmetry in here)
         # End Cartan's moving frame method variables
@@ -138,8 +140,10 @@ class ProbabilisticEnsembleDynamics(DynamicsBase):
         self.cartans_phi = cartans_phi
         self.cartans_psi = cartans_psi
         self.cartans_R = cartans_R
+        self.cartans_group_inv = cartans_group_inv
         self.cartans_submanifold_dim = cartans_submanifold_dim
         self.cartans_encoder_factory = cartans_encoder_factory
+        self.cartans_gamma = cartans_gamma
         if self.cartans_deterministic:
             assert self.cartans_rho is not None
             assert self.cartans_phi is not None
@@ -178,6 +182,8 @@ class ProbabilisticEnsembleDynamics(DynamicsBase):
             cartans_phi=self.cartans_phi,
             cartans_psi=self.cartans_psi,
             cartans_R=self.cartans_R,
+            cartans_gamma=self.cartans_gamma,
+            cartans_group_inv=self.cartans_group_inv,
             cartans_submanifold_dim=self.cartans_submanifold_dim,
             cartans_encoder_factory=self.cartans_encoder_factory,
         )

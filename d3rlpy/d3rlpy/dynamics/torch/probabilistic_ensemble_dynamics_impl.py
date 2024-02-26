@@ -51,6 +51,8 @@ class ProbabilisticEnsembleDynamicsImpl(TorchImplBase):
         cartans_phi=None,
         cartans_psi=None,
         cartans_R=None,
+        cartans_gamma=None,
+        cartans_group_inv=None,
         cartans_submanifold_dim=None,
         cartans_encoder_factory=VectorEncoderFactory(),
     ):
@@ -81,6 +83,8 @@ class ProbabilisticEnsembleDynamicsImpl(TorchImplBase):
         self.cartans_phi = cartans_phi
         self.cartans_psi = cartans_psi
         self.cartans_R = cartans_R
+        self.cartans_gamma = cartans_gamma
+        self.cartans_group_inv = cartans_group_inv
         self.cartans_submanifold_dim = cartans_submanifold_dim
         self.cartans_encoder_factory = cartans_encoder_factory
         if self.cartans_deterministic:
@@ -124,6 +128,8 @@ class ProbabilisticEnsembleDynamicsImpl(TorchImplBase):
             cartans_phi=self.cartans_phi,
             cartans_psi=self.cartans_psi,
             cartans_R=self.cartans_R,
+            cartans_gamma=self.cartans_gamma,
+            cartans_group_inv=self.cartans_group_inv,
             cartans_submanifold_dim=self.cartans_submanifold_dim,
             cartans_encoder_factory=self.cartans_encoder_factory,
         )

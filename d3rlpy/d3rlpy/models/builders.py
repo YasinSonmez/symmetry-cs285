@@ -216,6 +216,8 @@ def create_probabilistic_ensemble_dynamics_model(
     cartans_phi=None,
     cartans_psi=None,
     cartans_R=None,
+    cartans_gamma=None,
+    cartans_group_inv=None,
     cartans_submanifold_dim:Optional[int]=None,
     cartans_encoder_factory=VectorEncoderFactory(),
 ) -> ProbabilisticEnsembleDynamicsModel:
@@ -232,16 +234,20 @@ def create_probabilistic_ensemble_dynamics_model(
             discrete_action=discrete_action,
         )
 
-        full_state_encoder = cartans_encoder_factory.create_with_action(
-            observation_shape=observation_shape,
-            action_size=action_size,
-            discrete_action=discrete_action,
-        )
-        reduced_state_encoder = cartans_encoder_factory.create_with_action(
-            observation_shape=cartans_submanifold_dim,
-            action_size=action_size,
-            discrete_action=discrete_action,
-        )
+        if cartans_deterministic or cartans_stochastic:
+            full_state_encoder = cartans_encoder_factory.create_with_action(
+                observation_shape=observation_shape,
+                action_size=action_size,
+                discrete_action=discrete_action,
+            )
+            reduced_state_encoder = cartans_encoder_factory.create_with_action(
+                observation_shape=cartans_submanifold_dim,
+                action_size=action_size,
+                discrete_action=discrete_action,
+            )
+        else:
+            full_state_encoder = None
+            reduced_state_encoder = None
         model = ProbabilisticDynamicsModel(
             state_encoder, 
             reward_encoder,
@@ -255,6 +261,8 @@ def create_probabilistic_ensemble_dynamics_model(
             cartans_phi=cartans_phi,
             cartans_psi=cartans_psi,
             cartans_R=cartans_R,
+            cartans_gamma=cartans_gamma,
+            cartans_group_inv=cartans_group_inv,
             cartans_full_state_encoder=full_state_encoder,
             cartans_reduced_state_encoder=reduced_state_encoder,
         )

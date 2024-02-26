@@ -41,7 +41,28 @@ def _gaussian_likelihood(
     x: torch.Tensor, mu: torch.Tensor, logstd: torch.Tensor
 ) -> torch.Tensor:
     inv_var = torch.exp(-2.0 * logstd)
-    return 0.5 * (((mu - x) ** 2) * inv_var).sum(dim=1, keepdim=True)
+    likelihood = 0.5 * (((mu - x) ** 2) * inv_var).sum(dim=1, keepdim=True)
+    return likelihood
+
+
+def _gaussian_likelihood_cov(
+    x: torch.Tensor, mu: torch.Tensor, L: torch.Tensor
+) -> torch.Tensor:
+    # Given x (states), mu (mean of distribution), and L (constructs covariance matrix as Sigma = L L^T)
+    # constructs gaussian likelihood loss
+
+    # First term from eq 1 of https://arxiv.org/pdf/1805.12114.pdf,
+    # "Deep Reinforcement Learning in a Handful of Trials using Probabilistic Dynamics Models"
+    demeaned_x = x - mu
+    assert demeaned_x.shape == x.shape
+
+    y = torch.linalg.solve(L, demeaned_x)
+    assert y.shape == x.shape
+
+    likelihood = (y**2).sum(dim=1, keepdim=True)
+    assert likelihood.shape == (x.shape[0], 1)
+
+    return likelihood
 
 
 def create_permutation_matrix(size, source_indices, target_indices):
@@ -120,8 +141,10 @@ class ProbabilisticDynamicsModel(nn.Module):  # type: ignore
         cartans_phi=None,
         cartans_psi=None,
         cartans_R=None,
-        cartans_full_state_encoder:Optional[EncoderWithAction]=None,
-        cartans_reduced_state_encoder:Optional[EncoderWithAction]=None,
+        cartans_gamma=None,
+        cartans_group_inv=None,
+        cartans_full_state_encoder: Optional[EncoderWithAction] = None,
+        cartans_reduced_state_encoder: Optional[EncoderWithAction] = None,
     ):
         super().__init__()
         # apply spectral normalization except logstd encoder.
@@ -139,24 +162,31 @@ class ProbabilisticDynamicsModel(nn.Module):  # type: ignore
         self.cartans_deterministic = cartans_deterministic
         self.cartans_stochastic = cartans_stochastic
         if self.cartans_deterministic:
-            assert self.cartans_rho is not None
-            assert self.cartans_phi is not None
-            assert self.cartans_psi is not None
+            assert cartans_rho is not None
+            assert cartans_phi is not None
+            assert cartans_psi is not None
+            assert cartans_gamma is not None
+            assert cartans_group_inv is not None
             assert cartans_full_state_encoder is not None
             assert cartans_reduced_state_encoder is not None
             self.cartans_rho = cartans_rho
             self.cartans_phi = cartans_phi
             self.cartans_psi = cartans_psi
+            self.cartans_gamma = cartans_gamma
+            self.cartans_group_inv = cartans_group_inv
             self.cartans_full_state_encoder = cartans_full_state_encoder
             self.cartans_reduced_state_encoder = cartans_reduced_state_encoder
         if self.cartans_stochastic:
-            assert self.cartans_rho is not None
-            assert self.cartans_psi is not None
+            assert cartans_rho is not None
+            assert cartans_psi is not None
+            assert cartans_gamma is not None
             assert cartans_full_state_encoder is not None
             assert cartans_reduced_state_encoder is not None
             self.cartans_rho = cartans_rho
             self.cartans_psi = cartans_psi
             self.cartans_R = cartans_R
+            self.cartans_gamma = cartans_gamma
+            self.cartans_group_inv = cartans_group_inv
             self.cartans_full_state_encoder = cartans_full_state_encoder
             self.cartans_reduced_state_encoder = cartans_reduced_state_encoder
 
@@ -167,15 +197,20 @@ class ProbabilisticDynamicsModel(nn.Module):  # type: ignore
         action_size = state_encoder.action_size
 
         if self.cartans_deterministic or self.cartans_stochastic:
-            state_mu_feature_size = self.cartans_reduced_state_encoder.get_feature_size()
+            state_mu_feature_size = (
+                self.cartans_reduced_state_encoder.get_feature_size()
+            )
             reward_feature_size = self.cartans_full_state_encoder.get_feature_size()
             observation_size = self.cartans_full_state_encoder.observation_shape[0]
             action_size = self.cartans_full_state_encoder.action_size
         if self.cartans_deterministic:
-            state_logstd_feature_size = self.cartans_full_state_encoder.get_feature_size()
+            state_logstd_feature_size = (
+                self.cartans_full_state_encoder.get_feature_size()
+            )
         if self.cartans_stochastic:
-            state_logstd_feature_size = self.cartans_reduced_state_encoder.get_feature_size()
-
+            state_logstd_feature_size = (
+                self.cartans_reduced_state_encoder.get_feature_size()
+            )
 
         if permutation_indices is not None:
             m = len(self._permutation_indices)
@@ -191,7 +226,6 @@ class ProbabilisticDynamicsModel(nn.Module):  # type: ignore
             self._P_a = None
         # out_size = observation_size + 1
         out_size = observation_size
-
 
         # TODO: handle image observation
         self._state_mu = spectral_norm(nn.Linear(state_mu_feature_size, out_size))
@@ -217,15 +251,14 @@ class ProbabilisticDynamicsModel(nn.Module):  # type: ignore
     def compute_stats(
         self, x: torch.Tensor, action: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        
         if not (self.cartans_deterministic or self.cartans_stochastic):
             state_mu_h = self._state_encoder(x, action)
             state_logstd_h = state_mu_h
             reward_h = self._reward_encoder(x, action)
         else:
-            gammax = self.cartans_gamma(x) # TODO(Neelay): define
+            gammax = self.cartans_gamma(x)  # TODO(Neelay): define
             xbar = self.cartans_rho(x, gammax=gammax)
-            actionbar = self.cartans_psi(gammax, x)
+            actionbar = self.cartans_psi(gammax, action)
             reduced_h = self.cartans_reduced_state_encoder(xbar, actionbar)
             full_h = self.cartans_full_state_encoder(x, action)
             state_mu_h = reduced_h
@@ -235,16 +268,18 @@ class ProbabilisticDynamicsModel(nn.Module):  # type: ignore
                 state_logstd_h = reduced_h
             reward_h = full_h
 
-            gammaxinv = None # TODO(Neelay): define
+            gammaxinv = self.cartans_group_inv(gammax)
 
-        state_mu = self._state_mu(state_mu_h)
+        state_mu0 = self._state_mu(state_mu_h)
         if self.cartans_deterministic:
-            state_mu = state_mu + self.cartans_phi(gammax, x)
+            state_mu = state_mu0 + self.cartans_phi(gammax, x)
             state_mu = self.cartans_phi(gammaxinv, state_mu)
             state_mu = state_mu - x
-        if self.cartans_stochastic:
+        elif self.cartans_stochastic:
             Rgammaxinv = self.cartans_R(gammaxinv)
-            state_mu = Rgammaxinv @ state_mu
+            state_mu = torch.mm(Rgammaxinv, state_mu0.t()).t()
+        else:
+            state_mu = state_mu0
         reward_mu = self._reward_mu(reward_h)
 
         # log standard deviation with bounds
@@ -257,7 +292,8 @@ class ProbabilisticDynamicsModel(nn.Module):  # type: ignore
         )
         if self.cartans_stochastic:
             # This is L in var(DeltaF(x,u)) = LL^T, assuming state_logstd is Lbar such that var(DeltaFbar(xbar, ubar)) = Lbar Lbar^T
-            state_logstd = torch.mm(Rgammaxinv, state_logstd.diag())
+            state_logstd = state_logstd**2 + 1e-6 # Make positive definite
+            state_logstd = Rgammaxinv @ state_logstd.diag_embed()
 
         reward_logstd = self._reward_logstd(reward_h)
         reward_logstd = self._reward_max_logstd - F.softplus(
@@ -363,13 +399,20 @@ class ProbabilisticDynamicsModel(nn.Module):  # type: ignore
         logstd_reward = reward_logstd.view(-1, 1)
 
         # gaussian likelihood loss
-        likelihood_loss = _gaussian_likelihood(next_observations, mu_x, logstd_x)
+        if not self.cartans_stochastic:
+            likelihood_loss = _gaussian_likelihood(next_observations, mu_x, logstd_x)
+        else:
+            likelihood_loss = _gaussian_likelihood_cov(
+                next_observations, mu_x, logstd_x
+            )
         likelihood_loss += _gaussian_likelihood(rewards, mu_reward, logstd_reward)
 
         # penalty to minimize standard deviation
-        penalty = state_logstd.sum(dim=1, keepdim=True) + reward_logstd.sum(
-            dim=1, keepdim=True
-        )
+        if not self.cartans_stochastic:
+            penalty = state_logstd.sum(dim=1, keepdim=True)
+        else:
+            penalty = state_logstd.logdet().reshape((-1, 1))
+        penalty += reward_logstd.sum(dim=1, keepdim=True)
 
         # minimize logstd bounds
         bound_loss = (
