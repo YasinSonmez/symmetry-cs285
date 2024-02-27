@@ -1,50 +1,261 @@
+import os
+
 import gym
+import torch
 from sklearn.model_selection import train_test_split
 
 import d3rlpy
 import encoders
 import environments
 from d3rlpy.algos import COMBO, MOPO
-import torch
 from d3rlpy.models.encoders import VectorEncoderFactory
 
-print(gym.version.VERSION)
 
-N_POLICY_STEPS = 50000  # 100000
-N_EPOCHS = 5
-N_RUNS = 3
-EXPERIMENT_NAME = "TEST"
+def inv_pend_symmetries():
+    env = environments.RewardAssymetricInvertedPendulum
+    return {
+        "rho": env.rho,
+        "phi": env.phi,
+        "psi": env.psi,
+        "R": env.R,
+        "gamma": env.gamma,
+        "group_inv": env.group_inv,
+        "submanifold_dim": env.submanifold_dim(),
+    }
 
+
+def two_car_symmetries():
+    def rho(x, gammax=None):
+        assert x.ndim == 2
+        assert x.shape[1] == 24
+        x1 = x[:, :6]
+        x2 = x[:, 6:12]
+        x1g = x[:, 12:18]
+        x2g = x[:, 18:24]
+
+        # First do it for the first car
+        v1x = x1[:, 2:3]
+        v1y = x1[:, 3:4]
+        h1x = x1[:, 4:5]
+        h1y = x1[:, 5:6]
+        rho1 = torch.hstack((h1x * v1x + h1y * v1y, -v1x * h1y + h1x * v1y))
+        assert rho1.shape == (x.shape[0], 2)
+
+        # Now second car
+        v2x = x2[:, 2:3]
+        v2y = x2[:, 3:4]
+        h2x = x2[:, 4:5]
+        h2y = x2[:, 5:6]
+        rho2 = torch.hstack((h2x * v2x + h2y * v2y, -v2x * h2y + h2x * v2y))
+        assert rho2.shape == (x.shape[0], 2)
+
+        # Goal rho is simply empty
+
+        rho = torch.hstack((rho1, rho2))
+        assert rho.shape[0] == x.shape[0] and rho.shape[1] == 2 + 2
+        return rho
+
+    def phi(alpha, x):
+        assert alpha.shape == (x.shape[0], 3 + 3 + 6 + 6)
+        assert x.ndim == 2
+        assert x.shape[1] == 24
+        x1 = x[:, :6]
+        x2 = x[:, 6:12]
+        x1g = x[:, 12:18]
+        x2g = x[:, 18:24]
+        alpha1 = alpha[:, 0:3]
+        alpha2 = alpha[:, 3:6]
+        alpha1g = alpha[:, 6:12]
+        alpha2g = alpha[:, 12:18]
+
+        def _phi_car(alpha, xtilde):
+            assert xtilde.ndim == 2 and alpha.ndim == 2
+            assert xtilde.shape[1] == 6
+            assert alpha.shape[0] == xtilde.shape[0]
+            assert alpha.shape[1] == 3
+
+            xprime = alpha[:, 0:1]
+            yprime = alpha[:, 1:2]
+            psiprime = alpha[:, 2:3]
+
+            x = xtilde[:, 0:1]
+            y = xtilde[:, 1:2]
+            vx = xtilde[:, 2:3]
+            vy = xtilde[:, 3:4]
+            hx = xtilde[:, 4:5]
+            hy = xtilde[:, 5:6]
+
+            cospsiprime = torch.cos(psiprime)
+            sinpsiprime = torch.sin(psiprime)
+
+            def _rotate(x, y):
+                return (
+                    cospsiprime * x - sinpsiprime * y,
+                    sinpsiprime * x + cospsiprime * y,
+                )
+
+            rot_x, rot_y = _rotate(x, y)
+            rot_vx, rot_vy = _rotate(vx, vy)
+            rot_hx, rot_hy = _rotate(hx, hy)
+
+            res = torch.hstack(
+                (rot_x + xprime, rot_y + yprime, rot_vx, rot_vy, rot_hx, rot_hy)
+            )
+            assert res.shape == xtilde.shape
+            return res
+
+        def _phi_goal(alpha, g):
+            assert alpha.ndim == 2 and g.ndim == 2
+            assert alpha.shape == g.shape and g.shape[1] == 6
+            return g + alpha
+
+        phi1 = _phi_car(alpha1, x1)
+        phi2 = _phi_car(alpha2, x2)
+        phi1g = _phi_goal(alpha1g, x1g)
+        phi2g = _phi_goal(alpha2g, x2g)
+        phi = torch.hstack((phi1, phi2, phi1g, phi2g))
+        assert phi.shape == x.shape
+        return phi
+
+    def gamma(x):
+        assert x.ndim == 2
+        assert x.shape[1] == 24
+        x1 = x[:, :6]
+        x2 = x[:, 6:12]
+        x1g = x[:, 12:18]
+        x2g = x[:, 18:24]
+
+        def _gamma_car(xtilde):
+            assert xtilde.ndim == 2 and xtilde.shape[1] == 6
+            x = xtilde[:, 0:1]
+            y = xtilde[:, 1:2]
+            hx = xtilde[:, 4:5]
+            hy = xtilde[:, 5:6]
+            gamma1 = -x * hx - y * hy
+            gamma2 = x * hy - y * hx
+            gamma3 = torch.atan2(-hy, hx)
+            res = torch.hstack((gamma1, gamma2, gamma3))
+            assert res.shape == (xtilde.shape[0], 3)
+            return res
+
+        def _gamma_goal(g):
+            assert g.ndim == 2 and g.shape[1] == 6
+            res = -g
+            assert res.shape == (g.shape[0], 6)
+            return res
+
+        gamma1 = _gamma_car(x1)
+        gamma2 = _gamma_car(x2)
+        gamma1g = _gamma_goal(x1g)
+        gamma2g = _gamma_goal(x2g)
+        gamma = torch.hstack((gamma1, gamma2, gamma1g, gamma2g))
+        assert gamma.shape == (x.shape[0], 18)
+
+        return gamma
+
+    def psi(alpha, u):
+        return u
+
+    R = None
+
+    def group_inv(alpha, x=None):
+        # If x is not none, computes and returns inverse of gamma(x)
+        assert x is not None
+        assert x.ndim == 2 and x.shape[1] == 24
+        x1 = x[:, :6]
+        x2 = x[:, 6:12]
+        x1g = x[:, 12:18]
+        x2g = x[:, 18:24]
+
+        def _group_inv_car(xtilde):
+            assert xtilde.ndim == 2 and xtilde.shape[1] == 6
+            x = xtilde[:, 0:1]
+            y = xtilde[:, 1:2]
+            hx = xtilde[:, 4:5]
+            hy = xtilde[:, 5:6]
+            psiprime = torch.atan2(hy, hx)
+            res = torch.hstack((x, y, psiprime))
+            assert (
+                res.ndim == 2 and res.shape[0] == xtilde.shape[0] and res.shape[1] == 3
+            )
+            return res
+
+        def _group_inv_goal(g):
+            return g
+
+        res1 = _group_inv_car(x1)
+        res2 = _group_inv_car(x2)
+        res3 = _group_inv_goal(x1g)
+        res4 = _group_inv_goal(x2g)
+        res = torch.hstack((res1, res2, res3, res4))
+        assert res.ndim == 2
+        assert res.shape[0] == x.shape[0]
+        assert res.shape[1] == 3 + 3 + 6 + 6
+
+        return res
+
+    submanifold_dim = (2 + 2 + 0 + 0,)
+
+    return {
+        "rho": rho,
+        "phi": phi,
+        "psi": psi,
+        "R": R,
+        "gamma": gamma,
+        "group_inv": group_inv,
+        "submanifold_dim": submanifold_dim,
+    }
+
+
+# N_POLICY_STEPS = 50000  # 100000
+# N_RUNS = 3
+
+
+N_EPOCHS = 100
+SYMMETRY = bool(os.getenv("SYMMETRY"))
+EXPERIMENT_NAME = os.getenv("EXPERIMENT_NAME")
+SEED = int(os.getenv("SEED"))
+
+print("===================================")
+print(f"Experiment: {EXPERIMENT_NAME}")
+print(f"Symmetry: {SYMMETRY}")
+print(f"Seed: {SEED}")
+print("===================================")
 
 use_gpu = True
-seed = 0
-d3rlpy.seed(seed)
+d3rlpy.seed(SEED)
 
-env = environments.RewardAssymetricInvertedPendulum()
-eval_env = environments.RewardAssymetricInvertedPendulum()
-env.reset(seed=seed)
-eval_env.reset(seed=seed)
-dataset = d3rlpy.dataset.MDPDataset.load("d3rlpy_data/rwd_assym_inv_pend_v8.h5")
-train_episodes, test_episodes = train_test_split(dataset, random_state=seed)
+# env = environments.RewardAssymetricInvertedPendulum()
+# eval_env = environments.RewardAssymetricInvertedPendulum()
+# env.reset(seed=seed)
+# eval_env.reset(seed=seed)
+# dataset = d3rlpy.dataset.MDPDataset.load("d3rlpy_data/rwd_assym_inv_pend_v8.h5")
+dataset = d3rlpy.dataset.MDPDataset.load(
+    "d3rlpy_data/sac_parking_replay_buffer_2_cars_any_car_termination_d3rlpy.h5"
+)
+train_episodes, test_episodes = train_test_split(dataset, random_state=SEED)
 
-symmetry = False
+if SYMMETRY:
+    print("Using symmetry")
+    # symms = inv_pend_symmetries()
+    symms = two_car_symmetries()
 
-if symmetry:
     dynamics = d3rlpy.dynamics.ProbabilisticEnsembleDynamics(
         learning_rate=1e-4,
         use_gpu=use_gpu,
         cartans_deterministic=True,
         cartans_stochastic=False,
-        cartans_rho=env.rho,
-        cartans_phi=env.phi,
-        cartans_psi=env.psi,
-        cartans_R=env.R,
-        cartans_gamma=env.gamma,
-        cartans_group_inv=env.group_inv,
-        cartans_submanifold_dim=env.submanifold_dim,
+        cartans_rho=symms["rho"],
+        cartans_phi=symms["phi"],
+        cartans_psi=symms["psi"],
+        cartans_R=symms["R"],
+        cartans_gamma=symms["gamma"],
+        cartans_group_inv=symms["group_inv"],
+        cartans_submanifold_dim=symms["submanifold_dim"],
         cartans_encoder_factory=VectorEncoderFactory(),
     )
 else:
+    print("Not using symmetry")
     dynamics = d3rlpy.dynamics.ProbabilisticEnsembleDynamics(
         learning_rate=1e-4,
         use_gpu=use_gpu,
@@ -60,7 +271,7 @@ dynamics.fit(
         "variance": d3rlpy.metrics.scorer.dynamics_prediction_variance_scorer,
     },
     tensorboard_dir="tensorboard_logs/dynamics",
-    experiment_name=f"{EXPERIMENT_NAME}_SEED{seed}",
+    experiment_name=f"{EXPERIMENT_NAME}_SEED{SEED}",
 )
 
 # encoder_factory = d3rlpy.models.encoders.DefaultEncoderFactory(dropout_rate=0.2)

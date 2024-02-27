@@ -256,7 +256,7 @@ class ProbabilisticDynamicsModel(nn.Module):  # type: ignore
             state_logstd_h = state_mu_h
             reward_h = self._reward_encoder(x, action)
         else:
-            gammax = self.cartans_gamma(x)  # TODO(Neelay): define
+            gammax = self.cartans_gamma(x)
             xbar = self.cartans_rho(x, gammax=gammax)
             actionbar = self.cartans_psi(gammax, action)
             reduced_h = self.cartans_reduced_state_encoder(xbar, actionbar)
@@ -268,7 +268,7 @@ class ProbabilisticDynamicsModel(nn.Module):  # type: ignore
                 state_logstd_h = reduced_h
             reward_h = full_h
 
-            gammaxinv = self.cartans_group_inv(gammax)
+            gammaxinv = self.cartans_group_inv(gammax, x=x)
 
         state_mu0 = self._state_mu(state_mu_h)
         if self.cartans_deterministic:
