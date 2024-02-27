@@ -1,3 +1,3 @@
 env_name: "parking-v0"
 reduction: False
-file_path: 'd3rlpy_data/inverted_pendulum2.h5'
+file_path: 'd3rlpy_data/sac_parking_replay_buffer_2_cars_any_car_termination_d3rlpy.h5'
