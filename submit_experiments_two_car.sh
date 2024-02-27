@@ -15,7 +15,8 @@
 #SBATCH --qos=savio_lowprio
 #SBATCH --array=0-5
 # ================================
-conda activate mbrl2
+module load python/3.10.10
+source activate mbrl2
 
 if [[ $SLURM_ARRAY_TASK_ID -eq 0 ]]
 then
@@ -46,4 +47,5 @@ else
 fi
 
 wait
+source deactivate
 echo "all done"
