@@ -1,14 +1,10 @@
 import os
 
-import gym
 import torch
 from sklearn.model_selection import train_test_split
 
 import d3rlpy
-import encoders
 import environments
-from d3rlpy.algos import COMBO, MOPO
-from d3rlpy.models.encoders import VectorEncoderFactory
 
 
 def inv_pend_symmetries():
@@ -211,10 +207,20 @@ def two_car_symmetries():
 # N_RUNS = 3
 
 
-N_EPOCHS = 100
-SYMMETRY = bool(os.getenv("SYMMETRY"))
-EXPERIMENT_NAME = os.getenv("EXPERIMENT_NAME")
+# N_EPOCHS = 100
+N_STEPS = 1000000
+N_STEPS_PER_EPOCH = 5000
+
+TASK_ID = int(os.getenv("TASK_ID"))
 SEED = int(os.getenv("SEED"))
+assert TASK_ID in [0, 1]
+if TASK_ID == 0:
+    SYMMETRY = True
+    EXPERIMENT_NAME = f"TwoCarsCos_Symm_SEED{SEED}"
+elif TASK_ID == 1:
+    SYMMETRY = False
+    EXPERIMENT_NAME = f"TwoCarsCos_NoSymm_SEED{SEED}"
+
 
 print("===================================")
 print(f"Experiment: {EXPERIMENT_NAME}")
@@ -230,10 +236,16 @@ d3rlpy.seed(SEED)
 # env.reset(seed=seed)
 # eval_env.reset(seed=seed)
 # dataset = d3rlpy.dataset.MDPDataset.load("d3rlpy_data/rwd_assym_inv_pend_v8.h5")
+
 dataset = d3rlpy.dataset.MDPDataset.load(
     "d3rlpy_data/sac_parking_replay_buffer_2_cars_any_car_termination_d3rlpy.h5"
 )
 train_episodes, test_episodes = train_test_split(dataset, random_state=SEED)
+
+encoder_factory = d3rlpy.models.encoders.VectorEncoderFactory(
+    hidden_units=[256, 256], dropout_rate=0.2, activation="swish"
+)
+dynamics_optim = d3rlpy.models.optimizers.AdamFactory(weight_decay=2.5e-5)
 
 if SYMMETRY:
     print("Using symmetry")
@@ -241,8 +253,10 @@ if SYMMETRY:
     symms = two_car_symmetries()
 
     dynamics = d3rlpy.dynamics.ProbabilisticEnsembleDynamics(
-        learning_rate=1e-4,
+        learning_rate=3e-4,
         use_gpu=use_gpu,
+        optim_factory=dynamics_optim,
+        n_ensembles=3,
         cartans_deterministic=True,
         cartans_stochastic=False,
         cartans_rho=symms["rho"],
@@ -252,26 +266,29 @@ if SYMMETRY:
         cartans_gamma=symms["gamma"],
         cartans_group_inv=symms["group_inv"],
         cartans_submanifold_dim=symms["submanifold_dim"],
-        cartans_encoder_factory=VectorEncoderFactory(),
+        cartans_encoder_factory=encoder_factory,
     )
 else:
     print("Not using symmetry")
     dynamics = d3rlpy.dynamics.ProbabilisticEnsembleDynamics(
-        learning_rate=1e-4,
+        learning_rate=3e-4,
         use_gpu=use_gpu,
+        optim_factory=dynamics_optim,
+        n_ensembles=3,
     )
 
 dynamics.fit(
     train_episodes,
     eval_episodes=test_episodes,
-    n_epochs=N_EPOCHS,
+    n_steps=N_STEPS,
+    n_steps_per_epoch=N_STEPS_PER_EPOCH,
     scorers={
         "observation_error": d3rlpy.metrics.scorer.dynamics_observation_prediction_error_scorer,
         "reward_error": d3rlpy.metrics.scorer.dynamics_reward_prediction_error_scorer,
         "variance": d3rlpy.metrics.scorer.dynamics_prediction_variance_scorer,
     },
     tensorboard_dir="tensorboard_logs/dynamics",
-    experiment_name=f"{EXPERIMENT_NAME}_SEED{SEED}",
+    experiment_name=EXPERIMENT_NAME,
 )
 
 # encoder_factory = d3rlpy.models.encoders.DefaultEncoderFactory(dropout_rate=0.2)
