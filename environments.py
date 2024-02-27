@@ -20,6 +20,33 @@ class RewardAssymetricInvertedPendulum(InvertedPendulumEnv):
         # notdone = np.isfinite(obs).all() and (np.abs(obs[1]) <= 0.2) # Changed angle threshold to 0.75rad from 0.2rad
         # done = not notdone
         return obs, reward, done, info
+    
+    def rho(x, gammax=None):
+        assert x.ndim == 2
+        return x[:, 1:]
+
+    def phi(alpha, x):
+        assert x.ndim == 2
+        assert alpha.ndim == 1
+        assert alpha.shape[0] == x.shape[0]
+        xprime = x.clone()
+        xprime[:, 0] += alpha
+        return xprime
+    
+    def gamma(x):
+        return -x[:, 0]
+    
+    def psi(alpha, u):
+        return u
+    
+    def R(alpha):
+        return torch.eye(4, device=alpha.device)
+    
+    def group_inv(alpha):
+        return -alpha
+    
+    def submanifold_dim():
+        return (3,)
 
 class CarEnv(gym.Env):
     #  Car model from Maidens and Arcak paper.

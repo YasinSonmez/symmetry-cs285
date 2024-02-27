@@ -11,16 +11,13 @@ from d3rlpy.models.encoders import VectorEncoderFactory
 print(gym.version.VERSION)
 
 N_POLICY_STEPS = 50000  # 100000
-N_EPOCHS = 100
+N_EPOCHS = 5
 N_RUNS = 3
-EXPERIMENT_NAME = "exp_NoSymm_RwdAssymInvPend_MOPO"
+EXPERIMENT_NAME = "TEST"
 
-seed0 = 2
+
 use_gpu = True
-
-
-seed = seed0
-SEED = seed
+seed = 0
 d3rlpy.seed(seed)
 
 env = environments.RewardAssymetricInvertedPendulum()
@@ -33,34 +30,18 @@ train_episodes, test_episodes = train_test_split(dataset, random_state=seed)
 symmetry = False
 
 if symmetry:
-
-    def rho(x, gammax=None):
-        assert x.ndim == 2
-        return x[:, 1:]
-
-    def phi(alpha, x):
-        assert x.ndim == 2
-        assert alpha.ndim == 1
-        assert alpha.shape[0] == x.shape[0]
-        xprime = x.clone()
-        xprime[:, 0] += alpha
-        return xprime
-    
-    def gamma(x):
-        return -x[:, 0]
-
     dynamics = d3rlpy.dynamics.ProbabilisticEnsembleDynamics(
         learning_rate=1e-4,
         use_gpu=use_gpu,
         cartans_deterministic=True,
         cartans_stochastic=False,
-        cartans_rho=rho,
-        cartans_phi=phi,
-        cartans_psi=lambda alpha, u: u,
-        cartans_R=lambda alpha: torch.eye(4, device=alpha.device),
-        cartans_gamma=gamma,
-        cartans_group_inv=lambda alpha: -alpha,
-        cartans_submanifold_dim=(3,),
+        cartans_rho=env.rho,
+        cartans_phi=env.phi,
+        cartans_psi=env.psi,
+        cartans_R=env.R,
+        cartans_gamma=env.gamma,
+        cartans_group_inv=env.group_inv,
+        cartans_submanifold_dim=env.submanifold_dim,
         cartans_encoder_factory=VectorEncoderFactory(),
     )
 else:
@@ -79,7 +60,7 @@ dynamics.fit(
         "variance": d3rlpy.metrics.scorer.dynamics_prediction_variance_scorer,
     },
     tensorboard_dir="tensorboard_logs/dynamics",
-    experiment_name=f"{EXPERIMENT_NAME}_SEED{SEED}",
+    experiment_name=f"{EXPERIMENT_NAME}_SEED{seed}",
 )
 
 # encoder_factory = d3rlpy.models.encoders.DefaultEncoderFactory(dropout_rate=0.2)
