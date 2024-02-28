@@ -4,20 +4,21 @@ import torch
 from sklearn.model_selection import train_test_split
 
 import d3rlpy
-import environments
+
+# import environments
 
 
-def inv_pend_symmetries():
-    env = environments.RewardAssymetricInvertedPendulum
-    return {
-        "rho": env.rho,
-        "phi": env.phi,
-        "psi": env.psi,
-        "R": env.R,
-        "gamma": env.gamma,
-        "group_inv": env.group_inv,
-        "submanifold_dim": env.submanifold_dim(),
-    }
+# def inv_pend_symmetries():
+#     env = environments.RewardAssymetricInvertedPendulum
+#     return {
+#         "rho": env.rho,
+#         "phi": env.phi,
+#         "psi": env.psi,
+#         "R": env.R,
+#         "gamma": env.gamma,
+#         "group_inv": env.group_inv,
+#         "submanifold_dim": env.submanifold_dim(),
+#     }
 
 
 def two_car_symmetries():
@@ -213,23 +214,46 @@ N_STEPS_PER_EPOCH = 5000
 
 TASK_ID = int(os.getenv("TASK_ID"))
 SEED = int(os.getenv("SEED"))
-assert TASK_ID in [0, 1]
+USE_GPU = int(os.getenv("USE_GPU"))
+
+
+assert TASK_ID in [0, 1, 2, 3]
 if TASK_ID == 0:
     SYMMETRY = True
-    EXPERIMENT_NAME = f"TwoCarsCos_Symm_SEED{SEED}"
+    EXPERIMENT_NAME = f"TwoCarsCos_Symm_2Layer_SEED{SEED}"
+    hidden_units = [256, 256]
 elif TASK_ID == 1:
     SYMMETRY = False
-    EXPERIMENT_NAME = f"TwoCarsCos_NoSymm_SEED{SEED}"
+    EXPERIMENT_NAME = f"TwoCarsCos_NoSymm_2Layer_SEED{SEED}"
+    hidden_units = [256, 256]
+elif TASK_ID == 2:
+    SYMMETRY = True
+    EXPERIMENT_NAME = f"TwoCarsCos_Symm_3Layer_SEED{SEED}"
+    hidden_units = [256, 256, 256]
+elif TASK_ID == 3:
+    SYMMETRY = False
+    EXPERIMENT_NAME = f"TwoCarsCos_NoSymm_3Layer_SEED{SEED}"
+    hidden_units = [256, 256, 256]
 
+d3rlpy.seed(SEED)
+
+if USE_GPU == 1:
+    use_gpu = True
+elif USE_GPU == 0:
+    use_gpu = False
+else:
+    raise ValueError(f"USE_GPU must be 0 or 1. Was {USE_GPU}")
 
 print("===================================")
 print(f"Experiment: {EXPERIMENT_NAME}")
 print(f"Symmetry: {SYMMETRY}")
 print(f"Seed: {SEED}")
+print(f"Gpu: {use_gpu}")
 print("===================================")
 
-use_gpu = True
-d3rlpy.seed(SEED)
+
+
+
 
 # env = environments.RewardAssymetricInvertedPendulum()
 # eval_env = environments.RewardAssymetricInvertedPendulum()
@@ -240,12 +264,14 @@ d3rlpy.seed(SEED)
 dataset = d3rlpy.dataset.MDPDataset.load(
     "d3rlpy_data/sac_parking_replay_buffer_2_cars_any_car_termination_d3rlpy.h5"
 )
-train_episodes, test_episodes = train_test_split(dataset, random_state=SEED)
+train_episodes, test_episodes = train_test_split(
+    dataset, random_state=SEED, train_size=0.9
+)
 
 encoder_factory = d3rlpy.models.encoders.VectorEncoderFactory(
-    hidden_units=[256, 256], dropout_rate=0.2, activation="swish"
+    hidden_units=hidden_units  # , dropout_rate=0.2, activation="swish"
 )
-dynamics_optim = d3rlpy.models.optimizers.AdamFactory(weight_decay=2.5e-5)
+# dynamics_optim = d3rlpy.models.optimizers.AdamFactory(weight_decay=2.5e-5)
 
 if SYMMETRY:
     print("Using symmetry")
@@ -255,7 +281,7 @@ if SYMMETRY:
     dynamics = d3rlpy.dynamics.ProbabilisticEnsembleDynamics(
         learning_rate=3e-4,
         use_gpu=use_gpu,
-        optim_factory=dynamics_optim,
+        # optim_factory=dynamics_optim,
         n_ensembles=3,
         cartans_deterministic=True,
         cartans_stochastic=False,
@@ -273,7 +299,7 @@ else:
     dynamics = d3rlpy.dynamics.ProbabilisticEnsembleDynamics(
         learning_rate=3e-4,
         use_gpu=use_gpu,
-        optim_factory=dynamics_optim,
+        # optim_factory=dynamics_optim,
         n_ensembles=3,
     )
 
@@ -289,6 +315,7 @@ dynamics.fit(
     },
     tensorboard_dir="tensorboard_logs/dynamics",
     experiment_name=EXPERIMENT_NAME,
+    save_interval=20,
 )
 
 # encoder_factory = d3rlpy.models.encoders.DefaultEncoderFactory(dropout_rate=0.2)
