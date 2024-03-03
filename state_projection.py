@@ -301,6 +301,8 @@ else:
         use_gpu=use_gpu,
         # optim_factory=dynamics_optim,
         n_ensembles=3,
+        state_encoder_factory=encoder_factory,
+        reward_encoder_factory=encoder_factory,
     )
 
 dynamics.fit(
@@ -313,7 +315,7 @@ dynamics.fit(
         "reward_error": d3rlpy.metrics.scorer.dynamics_reward_prediction_error_scorer,
         "variance": d3rlpy.metrics.scorer.dynamics_prediction_variance_scorer,
     },
-    tensorboard_dir="tensorboard_logs/dynamics",
+    tensorboard_dir="tensorboard_logs/dynamics/parking",
     experiment_name=EXPERIMENT_NAME,
     save_interval=20,
 )
