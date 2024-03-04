@@ -176,6 +176,9 @@ class ProbabilisticDynamicsModel(nn.Module):  # type: ignore
             self.cartans_group_inv = cartans_group_inv
             self.cartans_full_state_encoder = cartans_full_state_encoder
             self.cartans_reduced_state_encoder = cartans_reduced_state_encoder
+            # Ensure these aren't used if using cartan's impl
+            self._state_encoder = None
+            self._reward_encoder = None
         if self.cartans_stochastic:
             assert cartans_rho is not None
             assert cartans_psi is not None
@@ -189,6 +192,9 @@ class ProbabilisticDynamicsModel(nn.Module):  # type: ignore
             self.cartans_group_inv = cartans_group_inv
             self.cartans_full_state_encoder = cartans_full_state_encoder
             self.cartans_reduced_state_encoder = cartans_reduced_state_encoder
+            # Ensure these aren't used if using cartan's impl
+            self._state_encoder = None
+            self._reward_encoder = None
 
         state_mu_feature_size = state_encoder.get_feature_size()  # TODO: do I need to enforce feature and observation size are common between the state and reward encoders?
         state_logstd_feature_size = state_mu_feature_size

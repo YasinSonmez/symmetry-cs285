@@ -204,9 +204,39 @@ def two_car_symmetries():
     }
 
 
+def no_symmetry():
+    def rho(x, gammax=None):
+        return x
+
+    def phi(alpha, x):
+        return x
+
+    def gamma(x):
+        return 0
+
+    def psi(alpha, u):
+        return u
+
+    R = None
+
+    def group_inv(alpha, x=None):
+        return 0
+
+    submanifold_dim = (24,)
+
+    return {
+        "rho": rho,
+        "phi": phi,
+        "psi": psi,
+        "R": R,
+        "gamma": gamma,
+        "group_inv": group_inv,
+        "submanifold_dim": submanifold_dim,
+    }
+
+
 # N_POLICY_STEPS = 50000  # 100000
 # N_RUNS = 3
-
 
 # N_EPOCHS = 100
 N_STEPS = 1000000
@@ -215,7 +245,6 @@ N_STEPS_PER_EPOCH = 5000
 TASK_ID = int(os.getenv("TASK_ID"))
 SEED = int(os.getenv("SEED"))
 USE_GPU = int(os.getenv("USE_GPU"))
-
 
 assert TASK_ID in [0, 1, 2, 3]
 if TASK_ID == 0:
@@ -252,9 +281,6 @@ print(f"Gpu: {use_gpu}")
 print("===================================")
 
 
-
-
-
 # env = environments.RewardAssymetricInvertedPendulum()
 # eval_env = environments.RewardAssymetricInvertedPendulum()
 # env.reset(seed=seed)
@@ -268,42 +294,31 @@ train_episodes, test_episodes = train_test_split(
     dataset, random_state=SEED, train_size=0.9
 )
 
-encoder_factory = d3rlpy.models.encoders.VectorEncoderFactory(
-    hidden_units=hidden_units  # , dropout_rate=0.2, activation="swish"
-)
-# dynamics_optim = d3rlpy.models.optimizers.AdamFactory(weight_decay=2.5e-5)
+encoder_factory = d3rlpy.models.encoders.VectorEncoderFactory(hidden_units=hidden_units)
 
 if SYMMETRY:
     print("Using symmetry")
     # symms = inv_pend_symmetries()
     symms = two_car_symmetries()
-
-    dynamics = d3rlpy.dynamics.ProbabilisticEnsembleDynamics(
-        learning_rate=3e-4,
-        use_gpu=use_gpu,
-        # optim_factory=dynamics_optim,
-        n_ensembles=3,
-        cartans_deterministic=True,
-        cartans_stochastic=False,
-        cartans_rho=symms["rho"],
-        cartans_phi=symms["phi"],
-        cartans_psi=symms["psi"],
-        cartans_R=symms["R"],
-        cartans_gamma=symms["gamma"],
-        cartans_group_inv=symms["group_inv"],
-        cartans_submanifold_dim=symms["submanifold_dim"],
-        cartans_encoder_factory=encoder_factory,
-    )
 else:
     print("Not using symmetry")
-    dynamics = d3rlpy.dynamics.ProbabilisticEnsembleDynamics(
-        learning_rate=3e-4,
-        use_gpu=use_gpu,
-        # optim_factory=dynamics_optim,
-        n_ensembles=3,
-        state_encoder_factory=encoder_factory,
-        reward_encoder_factory=encoder_factory,
-    )
+    symms = no_symmetry()
+
+dynamics = d3rlpy.dynamics.ProbabilisticEnsembleDynamics(
+    learning_rate=3e-4,
+    use_gpu=use_gpu,
+    n_ensembles=3,
+    cartans_deterministic=True,
+    cartans_stochastic=False,
+    cartans_rho=symms["rho"],
+    cartans_phi=symms["phi"],
+    cartans_psi=symms["psi"],
+    cartans_R=symms["R"],
+    cartans_gamma=symms["gamma"],
+    cartans_group_inv=symms["group_inv"],
+    cartans_submanifold_dim=symms["submanifold_dim"],
+    cartans_encoder_factory=encoder_factory,
+)
 
 dynamics.fit(
     train_episodes,
