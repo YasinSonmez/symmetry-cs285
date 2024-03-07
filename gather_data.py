@@ -18,10 +18,8 @@ seed = 0
 d3rlpy.seed(seed)
 use_gpu = True
 
-env = TimeLimit(environments.RewardAssymetricInvertedPendulum(), max_episode_steps=300)
-eval_env = TimeLimit(
-    environments.RewardAssymetricInvertedPendulum(), max_episode_steps=300
-)
+env = TimeLimit(gym.make("Reacher-v2"), max_episode_steps=300)
+eval_env = TimeLimit(gym.make("Reacher-v2"), max_episode_steps=300)
 
 env.reset(seed=seed)
 eval_env.reset(seed=seed)
@@ -54,7 +52,7 @@ sac.fit_online(
 )
 
 dataset = buffer.to_mdp_dataset()
-dataset.dump("d3rlpy_data/TEST.h5")
+dataset.dump("d3rlpy_data/test_reacher.h5")
 
 scorer = d3rlpy.metrics.scorer.evaluate_on_environment(eval_env, render=True)
 mean_episode_return = scorer(sac)
