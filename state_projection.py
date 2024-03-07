@@ -47,7 +47,7 @@ def reacher_symmetries():
                 theta1dot,
                 theta2dot,
                 costheta1 * xfmxt + sintheta1 * yfmyt,
-                -sintheta1 * xfmxt + costheta1 * xfmxt,
+                -sintheta1 * xfmxt + costheta1 * yfmyt,
                 zfmzt,
             )
         )
@@ -85,7 +85,7 @@ def reacher_symmetries():
                 theta1dot,
                 theta2dot,
                 cosalpha * xfmxt - sinalpha * yfmyt,
-                sinalpha * xfmxt + cosalpha * xfmxt,
+                sinalpha * xfmxt + cosalpha * yfmyt,
                 zfmzt,
             )
         )
@@ -106,7 +106,7 @@ def reacher_symmetries():
         assert result.shape[0] == x.shape[0]
         assert result.shape[1] == 1
         return result
-    
+
     R = None
 
     def group_inv(alpha, x=None):
@@ -133,6 +133,139 @@ def reacher_symmetries():
         "group_inv": group_inv,
         "submanifold_dim": submanifold_dim,
     }
+
+
+def reacher_symmetries2():
+    def rho(x, gammax=None):
+        assert x.ndim == 2
+        assert x.shape[1] == 11
+
+        costheta1 = x[:, 0:1]
+        costheta2 = x[:, 1:2]
+        sintheta1 = x[:, 2:3]
+        sintheta2 = x[:, 3:4]
+        # xt = x[:, 4:5]
+        # yt = x[:, 5:6]
+        theta1dot = x[:, 6:7]
+        theta2dot = x[:, 7:8]
+        xfmxt = x[:, 8:9]
+        yfmyt = x[:, 9:10]
+        # zfmzt = x[:, 10:11]
+
+        result = torch.hstack(
+            (
+                costheta2,
+                sintheta2,
+                # costheta1 * xt + sintheta1 * yt,
+                # -sintheta1 * xt + costheta1 * yt,
+                theta1dot,
+                theta2dot,
+                costheta1 * xfmxt + sintheta1 * yfmyt,
+                -sintheta1 * xfmxt + costheta1 * yfmyt,
+                # zfmzt,
+            )
+        )
+        assert result.shape[1] == 6
+        return result
+
+    def phi(alpha, x):
+        assert alpha.ndim == 2 and alpha.shape[1] == 4
+        assert x.ndim == 2
+        assert x.shape[1] == 11
+
+        costheta1 = x[:, 0:1]
+        costheta2 = x[:, 1:2]
+        sintheta1 = x[:, 2:3]
+        sintheta2 = x[:, 3:4]
+        xt = x[:, 4:5]
+        yt = x[:, 5:6]
+        theta1dot = x[:, 6:7]
+        theta2dot = x[:, 7:8]
+        xfmxt = x[:, 8:9]
+        yfmyt = x[:, 9:10]
+        zfmzt = x[:, 10:11]
+
+        thetaprime = alpha[:, 0:1]
+
+        costhetaprime = torch.cos(thetaprime)
+        sinthetaprime = torch.sin(thetaprime)
+
+        result = torch.hstack(
+            (
+                costhetaprime * costheta1 - sinthetaprime * sintheta1,
+                costheta2,
+                sinthetaprime * costheta1 + costhetaprime * sintheta1,
+                sintheta2,
+                # cosalpha * xt - sinalpha * yt,
+                # sinalpha * xt + cosalpha * yt,
+                xt + alpha[:, 1:2],
+                yt + alpha[:, 2:3],
+                theta1dot,
+                theta2dot,
+                costhetaprime * xfmxt - sinthetaprime * yfmyt,
+                sinthetaprime * xfmxt + costhetaprime * yfmyt,
+                zfmzt + alpha[:, 3:4],
+            )
+        )
+        assert result.shape[1] == 11
+        return result
+
+    def psi(alpha, u):
+        return u
+
+    def gamma(x):
+        assert x.ndim == 2
+        assert x.shape[1] == 11
+
+        costheta1 = x[:, 0:1]
+        sintheta1 = x[:, 2:3]
+        xt = x[:, 4:5]
+        yt = x[:, 5:6]
+        zfmzt = x[:, 10:11]
+
+        result0 = torch.atan2(-sintheta1, costheta1)
+        assert result0.ndim == 2 and result0.shape == (x.shape[0], 1)
+        result1 = -xt
+        result2 = -yt
+        result3 = -zfmzt
+        result = torch.hstack((result0, result1, result2, result3))
+        assert result.ndim == 2 and result.shape == (x.shape[0], 4)
+        return result
+
+    R = None
+
+    def group_inv(alpha, x=None):
+        # If x is not none, computes and returns inverse of gamma(x)
+        assert x is not None
+        assert x.ndim == 2 and x.shape[1] == 11
+
+        costheta1 = x[:, 0:1]
+        sintheta1 = x[:, 2:3]
+        xt = x[:, 4:5]
+        yt = x[:, 5:6]
+        zfmzt = x[:, 10:11]
+
+        result0 = torch.atan2(sintheta1, costheta1)
+        assert result0.ndim == 2 and result0.shape == (x.shape[0], 1)
+        result1 = xt
+        result2 = yt
+        result3 = zfmzt
+        result = torch.hstack((result0, result1, result2, result3))
+        assert result.ndim == 2 and result.shape == (x.shape[0], 4)
+        return result
+
+    submanifold_dim = (6,)
+
+    return {
+        "rho": rho,
+        "phi": phi,
+        "psi": psi,
+        "R": R,
+        "gamma": gamma,
+        "group_inv": group_inv,
+        "submanifold_dim": submanifold_dim,
+    }
+
 
 def two_car_symmetries():
     def rho(x, gammax=None):
@@ -335,7 +468,9 @@ def no_symmetry():
     def group_inv(alpha, x=None):
         return 0
 
-    submanifold_dim = (11,)
+    submanifold_dim = (
+        11,
+    )  # (24,) for two_car, (11,) for reacher_symmetries and reacher_symmetries2
 
     return {
         "rho": rho,
@@ -356,8 +491,8 @@ N_STEPS = 1000000
 N_STEPS_PER_EPOCH = 5000
 
 # TASK_ID = int(os.getenv("TASK_ID"))
-SEED = 0 # int(os.getenv("SEED"))
-USE_GPU = True # int(os.getenv("USE_GPU"))
+SEED = 0  # int(os.getenv("SEED"))
+USE_GPU = True  # int(os.getenv("USE_GPU"))
 
 # assert TASK_ID in [0, 1, 2, 3]
 # if TASK_ID == 0:
@@ -377,7 +512,7 @@ USE_GPU = True # int(os.getenv("USE_GPU"))
 #     EXPERIMENT_NAME = f"TwoCarsCos_NoSymm_3Layer_SEED{SEED}"
 #     hidden_units = [256, 256, 256]
 
-SYMMETRY = False
+SYMMETRY = True
 EXPERIMENT_NAME = "Test_Reacher"
 hidden_units = [256, 256]
 
@@ -418,7 +553,7 @@ if SYMMETRY:
     print("Using symmetry")
     # symms = inv_pend_symmetries()
     # symms = two_car_symmetries()
-    symms = reacher_symmetries()
+    symms = reacher_symmetries2()
 else:
     print("Not using symmetry")
     symms = no_symmetry()

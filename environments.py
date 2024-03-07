@@ -1,11 +1,17 @@
 import gym
-from gym.envs.mujoco.inverted_pendulum import InvertedPendulumEnv # gym 23.1 gives InvertedPendulum v2
+
+# gym 23.1 gives InvertedPendulum v2
 # from gym.envs.mujoco.inverted_pendulum_v4 import InvertedPendulumEnv
 import numpy as np
 import torch
+from gym.envs.mujoco.inverted_pendulum import (
+    InvertedPendulumEnv,
+)
+
 
 class RewardAssymetricInvertedPendulum(InvertedPendulumEnv):
     goal_x = 1.0
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
@@ -14,13 +20,13 @@ class RewardAssymetricInvertedPendulum(InvertedPendulumEnv):
         diff = obs[0] - self.goal_x
         b = 2
         c = 1.5
-        reward = b/(np.power(c, diff) + np.power(c, -diff))
+        reward = b / (np.power(c, diff) + np.power(c, -diff))
         # reward = -diff**2
 
         # notdone = np.isfinite(obs).all() and (np.abs(obs[1]) <= 0.2) # Changed angle threshold to 0.75rad from 0.2rad
         # done = not notdone
         return obs, reward, done, info
-    
+
     def rho(x, gammax=None):
         assert x.ndim == 2
         return x[:, 1:]
@@ -32,27 +38,28 @@ class RewardAssymetricInvertedPendulum(InvertedPendulumEnv):
         xprime = x.clone()
         xprime[:, 0] += alpha
         return xprime
-    
+
     def gamma(x):
         return -x[:, 0]
-    
+
     def psi(alpha, u):
         return u
-    
+
     def R(alpha):
         return torch.eye(4, device=alpha.device)
-    
+
     def group_inv(alpha):
         return -alpha
-    
+
     def submanifold_dim():
         return (3,)
+
 
 class CarEnv(gym.Env):
     #  Car model from Maidens and Arcak paper.
     metadata = {"render.modes": ["human", "rgb_array"], "video.frames_per_second": [50]}
 
-    def __init__(self, render_mode = None):
+    def __init__(self, render_mode=None):
         self.L = 1
 
         # Angle limit set to 2 * theta_threshold_radians so failing observation
@@ -99,7 +106,7 @@ class CarEnv(gym.Env):
 
         return self.state, reward, terminated, {}
 
-    def reset(self, seed = None):
+    def reset(self, seed=None):
         super().reset(seed=seed)
         self.state = self.np_random.uniform(
             low=-self.observation_space.high, high=self.observation_space.high
