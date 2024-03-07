@@ -335,7 +335,7 @@ def no_symmetry():
     def group_inv(alpha, x=None):
         return 0
 
-    submanifold_dim = (24,)
+    submanifold_dim = (11,)
 
     return {
         "rho": rho,
@@ -377,7 +377,7 @@ USE_GPU = True # int(os.getenv("USE_GPU"))
 #     EXPERIMENT_NAME = f"TwoCarsCos_NoSymm_3Layer_SEED{SEED}"
 #     hidden_units = [256, 256, 256]
 
-SYMMETRY = True
+SYMMETRY = False
 EXPERIMENT_NAME = "Test_Reacher"
 hidden_units = [256, 256]
 
