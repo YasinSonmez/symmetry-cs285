@@ -424,18 +424,29 @@ class ProbabilisticDynamicsModel(nn.Module):  # type: ignore
         penalty += reward_logstd.exp().sum(dim=1, keepdim=True)
 
         # minimize logstd bounds
-        bound_loss = (
-            self._state_max_logstd.sum()
-            - self._state_min_logstd.sum()
-            + self._reward_max_logstd.sum()
-            - self._reward_min_logstd.sum()
-        )
+        # bound_loss = (
+        #     self._state_max_logstd.sum()
+        #     - self._state_min_logstd.sum()
+        #     + self._reward_max_logstd.sum()
+        #     - self._reward_min_logstd.sum()
+        # )
+        # Alternative method to minimize logstd bounds that has a loss bounded below by 0
+        bound_loss = (self._state_max_logstd - self._state_min_logstd).square().sum()
+        bound_loss += (self._reward_max_logstd - self._reward_min_logstd).square().sum()
+        # So that when using this method, scaling factor becomes 1e-4
+        bound_loss *= 1e-2
 
         # print(f"penalty: \n{(penalty)[:3, :]}")
         # print(f"1e-2 * bound loss: {1e-2 * bound_loss}")
         # print(f"max logstd - min logstd {(self._state_max_logstd - self._state_min_logstd)[:3, :]}")
 
         loss = likelihood_loss + penalty + 1e-2 * bound_loss
+        # print(f"loss: {loss[:3, :]}")
+        # if (loss < 0).any():
+        #    print(f"loss: {loss[:3, :]}")
+        #    print(f"likelihood loss: \n{likelihood_loss[:3, :]}")
+        #    print(f"penalty: \n{(penalty)[:3, :]}")
+        #    print(f"1e-2 * bound loss: {1e-2 * bound_loss}")
 
         return loss.view(-1, 1)
 
