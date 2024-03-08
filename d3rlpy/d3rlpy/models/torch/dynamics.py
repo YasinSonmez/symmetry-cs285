@@ -406,19 +406,22 @@ class ProbabilisticDynamicsModel(nn.Module):  # type: ignore
 
         # gaussian likelihood loss
         if not self.cartans_stochastic:
-            likelihood_loss = _gaussian_likelihood(next_observations, mu_x, logstd_x)
+            likelihood_loss = _gaussian_likelihood(next_observations, mu_x, logstd_x)  
         else:
             likelihood_loss = _gaussian_likelihood_cov(
                 next_observations, mu_x, logstd_x
             )
-        likelihood_loss += _gaussian_likelihood(rewards, mu_reward, logstd_reward)
+        # print(f"State loss: \n{likelihood_loss[:3, :]}")
+        rwd_loss = _gaussian_likelihood(rewards, mu_reward, logstd_reward)
+        likelihood_loss += rwd_loss
+        # print(f"Rwd loss: \n{rwd_loss[:3, :]}")
 
         # penalty to minimize standard deviation
         if not self.cartans_stochastic:
-            penalty = state_logstd.sum(dim=1, keepdim=True)
+            penalty = state_logstd.exp().sum(dim=1, keepdim=True)
         else:
             penalty = state_logstd.logdet().reshape((-1, 1))
-        penalty += reward_logstd.sum(dim=1, keepdim=True)
+        penalty += reward_logstd.exp().sum(dim=1, keepdim=True)
 
         # minimize logstd bounds
         bound_loss = (
@@ -427,6 +430,10 @@ class ProbabilisticDynamicsModel(nn.Module):  # type: ignore
             + self._reward_max_logstd.sum()
             - self._reward_min_logstd.sum()
         )
+
+        # print(f"penalty: \n{(penalty)[:3, :]}")
+        # print(f"1e-2 * bound loss: {1e-2 * bound_loss}")
+        # print(f"max logstd - min logstd {(self._state_max_logstd - self._state_min_logstd)[:3, :]}")
 
         loss = likelihood_loss + penalty + 1e-2 * bound_loss
 
