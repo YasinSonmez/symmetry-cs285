@@ -397,6 +397,137 @@ def reacher_symmetries3():
         "submanifold_dim": submanifold_dim,
     }
 
+def reacher_symmetries4():
+    print("Using Reacher Symmetries 4.")
+    
+    def rho(x, gammax=None):
+        assert x.ndim == 2
+        assert x.shape[1] == 11
+
+        x1 = x[:, 0:1]
+        x2 = x[:, 1:2]
+        x3 = x[:, 2:3]
+        x4 = x[:, 3:4]
+        x5 = x[:, 4:5]
+        x6 = x[:, 5:6]
+        x7 = x[:, 6:7]
+        x8 = x[:, 7:8]
+        x9 = x[:, 8:9]
+        x10 = x[:, 9:10]
+
+        result = torch.hstack(
+            (
+                x2,
+                x4,
+                x7,
+                x8,
+                x1 * (x9 + x5) + x3 * (x10 + x6),
+                -x3 * (x9 + x5) + x1 * (x10 + x6),
+            )
+        )
+        assert result.shape[1] == 6
+        return result
+
+    def phi(alpha, x):
+        assert alpha.ndim == 2 and alpha.shape[1] == 4
+        assert x.ndim == 2
+        assert x.shape[1] == 11
+
+        thetaprime = alpha[:, 0:1]
+        delta1 = alpha[:, 1:2]
+        delta2 = alpha[:, 2:3]
+        delta3 = alpha[:, 3:4]
+
+        x1 = x[:, 0:1]
+        x2 = x[:, 1:2]
+        x3 = x[:, 2:3]
+        x4 = x[:, 3:4]
+        x5 = x[:, 4:5]
+        x6 = x[:, 5:6]
+        x7 = x[:, 6:7]
+        x8 = x[:, 7:8]
+        x9 = x[:, 8:9]
+        x10 = x[:, 9:10]
+        x11 = x[:, 10:11]
+
+        costhetaprime = torch.cos(thetaprime)
+        sinthetaprime = torch.sin(thetaprime)
+
+        result = torch.hstack(
+            (
+                costhetaprime * x1 - sinthetaprime * x3,
+                x2,
+                sinthetaprime * x1 + costhetaprime * x3,
+                x4,
+                x5 + delta1,
+                x6 + delta2,
+                x7,
+                x8,
+                costhetaprime * (x9 - delta1) - sinthetaprime * (x10 - delta2),
+                sinthetaprime * (x9 - delta1) + costhetaprime * (x10 - delta2),
+                x11 + delta3,
+            )
+        )
+        assert result.shape[1] == 11
+        return result
+
+    def psi(alpha, u):
+        return u
+
+    def gamma(x):
+        assert x.ndim == 2
+        assert x.shape[1] == 11
+
+        x1 = x[:, 0:1]
+        x3 = x[:, 2:3]
+        x5 = x[:, 4:5]
+        x6 = x[:, 5:6]
+        x11 = x[:, 10:11]
+
+        thetaprime = torch.atan2(-x3, x1)
+        assert thetaprime.ndim == 2 and thetaprime.shape == (x.shape[0], 1)
+        delta1 = -x5
+        delta2 = -x6
+        delta3 = -x11
+        alpha = torch.hstack((thetaprime, delta1, delta2, delta3))
+        assert alpha.ndim == 2 and alpha.shape == (x.shape[0], 4)
+        return alpha
+
+    R = None
+
+    def group_inv(alpha, x=None):
+        # If x is not none, computes and returns inverse of gamma(x)
+        assert x is not None
+        assert x.ndim == 2 and x.shape[1] == 11
+
+        x1 = x[:, 0:1]
+        x3 = x[:, 2:3]
+        x5 = x[:, 4:5]
+        x6 = x[:, 5:6]
+        x11 = x[:, 10:11]
+
+        thetaprime = torch.atan2(x3, x1)
+        assert thetaprime.ndim == 2 and thetaprime.shape == (x.shape[0], 1)
+        delta1 = x5
+        delta2 = x6
+        delta3 = x11
+        alpha = torch.hstack((thetaprime, delta1, delta2, delta3))
+        assert alpha.ndim == 2 and alpha.shape == (x.shape[0], 4)
+        return alpha
+
+    submanifold_dim = (6,)
+
+    return {
+        "rho": rho,
+        "phi": phi,
+        "psi": psi,
+        "R": R,
+        "gamma": gamma,
+        "group_inv": group_inv,
+        "submanifold_dim": submanifold_dim,
+    }
+
+
 
 def two_car_symmetries():
     def rho(x, gammax=None):
@@ -684,7 +815,8 @@ if SYMMETRY:
     # symms = inv_pend_symmetries()
     # symms = two_car_symmetries()
     # symms = reacher_symmetries2()
-    symms = reacher_symmetries3()
+    # symms = reacher_symmetries3()
+    symms = reacher_symmetries4()
 else:
     print("Not using symmetry")
     symms = no_symmetry()
