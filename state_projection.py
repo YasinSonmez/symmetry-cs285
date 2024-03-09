@@ -269,7 +269,7 @@ def reacher_symmetries2():
 
 def reacher_symmetries3():
     print("Using Reacher Symmetries 3.")
-    
+
     def rho(x, gammax=None):
         assert x.ndim == 2
         assert x.shape[1] == 11
@@ -397,9 +397,10 @@ def reacher_symmetries3():
         "submanifold_dim": submanifold_dim,
     }
 
+
 def reacher_symmetries4():
     print("Using Reacher Symmetries 4.")
-    
+
     def rho(x, gammax=None):
         assert x.ndim == 2
         assert x.shape[1] == 11
@@ -459,8 +460,8 @@ def reacher_symmetries4():
                 x2,
                 sinthetaprime * x1 + costhetaprime * x3,
                 x4,
-                x5 + delta1,
-                x6 + delta2,
+                costhetaprime * (x5 + delta1) - sinthetaprime * (x6 + delta2),
+                sinthetaprime * (x5 + delta1) + costhetaprime * (x6 + delta2),
                 x7,
                 x8,
                 costhetaprime * (x9 - delta1) - sinthetaprime * (x10 - delta2),
@@ -508,8 +509,8 @@ def reacher_symmetries4():
 
         thetaprime = torch.atan2(x3, x1)
         assert thetaprime.ndim == 2 and thetaprime.shape == (x.shape[0], 1)
-        delta1 = x5
-        delta2 = x6
+        delta1 = x1 * x5 + x3 * x6
+        delta2 = -x3 * x5 + x1 * x6
         delta3 = x11
         alpha = torch.hstack((thetaprime, delta1, delta2, delta3))
         assert alpha.ndim == 2 and alpha.shape == (x.shape[0], 4)
@@ -526,7 +527,6 @@ def reacher_symmetries4():
         "group_inv": group_inv,
         "submanifold_dim": submanifold_dim,
     }
-
 
 
 def two_car_symmetries():
@@ -805,7 +805,8 @@ dataset = d3rlpy.dataset.MDPDataset.load(
     "d3rlpy_data/reacher.h5"
 )
 train_episodes, test_episodes = train_test_split(
-    dataset, random_state=SEED, train_size=0.9
+    dataset,
+    random_state=SEED,  # , train_size=0.9
 )
 
 encoder_factory = d3rlpy.models.encoders.VectorEncoderFactory(hidden_units=hidden_units)
